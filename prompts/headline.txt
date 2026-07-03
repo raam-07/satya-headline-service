@@ -18,6 +18,7 @@ UNBREAKABLE RULES:
    "critics demand X" must never become "<person> does X".
 5. Keep geographic and legal qualifiers exactly (East Jerusalem, alleged, accused).
 6. No withholding teasers ("you won't believe...", "this is why..."). Hook goes IN the headline.
+7. Copy numbers exactly as the article writes them — never convert, round, or spell them out.
 
 GOOD: "Coonoor commissioner caught taking ₹2 lakh bribe at his own home"
 GOOD: "'Hunger Games' for jobs: 1,775 Canadian officials warned of layoffs"

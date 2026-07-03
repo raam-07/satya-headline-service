@@ -95,177 +95,15 @@ def should_skip_article(title, content):
         
     return False
 
-def validate_headline(generated_title, original_title, body):
-    gen_title = generated_title.strip()
-    
-    # 1. Check length
-    words = gen_title.split()
-    if len(words) < 3 or len(words) > 14:
-        return False, f"length {len(words)} out of bounds [3, 14]"
-        
-    # 2. Check leading/trailing quotes wrapping the whole line
-    if (gen_title.startswith('"') and gen_title.endswith('"')) or (gen_title.startswith("'") and gen_title.endswith("'")):
-        return False, "contains leading or trailing quotes wrapping the whole line"
-        
-    # Helper to check if a word is in text
-    def clean_word(w):
-        return "".join(c for c in w if c.isalnum()).lower()
-        
-    # Normalize number strings for comparison
-    def normalize_numbers(text):
-        text_lower = text.lower()
-        text_lower = re.sub(r'(\d+)\s+(crore|lakh|million|billion|percent|pct)', r'\1\2', text_lower)
-        return text_lower
-
-    norm_gen = normalize_numbers(gen_title)
-    norm_orig = normalize_numbers(original_title)
-    norm_body = normalize_numbers(body)
-
-    # Helper to check if a word is a common English word
-    def is_common_word(word):
-        word_lower = word.lower()
-        if len(word_lower) <= 3:
-            return True
-        common = {
-            # Verbs
-            "rejects", "reject", "rejections", "rejection", "fines", "fine", "goes", "go", "went", "gone", "aim", "aims", "held", "hold",
-            "holds", "withheld", "withhold", "drowns", "drown", "drowned", "abolishes", "abolish", "demands", "demand",
-            "face", "faces", "faced", "vanishes", "vanish", "vanished", "sparks", "spark", "sparked", "warned", "warn", "warns",
-            "arrested", "arrest", "arrests", "kills", "kill", "killed", "shows", "show", "shown", "showed", "claims", "claim",
-            "claimed", "says", "say", "said", "wins", "win", "won", "loses", "lose", "lost", "seeks", "seek", "sought",
-            "finds", "find", "found", "takes", "take", "took", "taken", "makes", "make", "made", "comes", "come", "came",
-            "gets", "get", "got", "gotten", "gives", "give", "gave", "given", "adds", "add", "added", "helps", "help",
-            "helped", "hopes", "hope", "hoped", "calls", "call", "called", "meets", "meet", "met", "stops", "stop",
-            "stopped", "drops", "drop", "dropped", "plans", "plan", "planned", "vows", "vow", "vowed", "wants", "want",
-            "wanted", "needs", "need", "needed", "seems", "seem", "seemed", "looks", "look", "looked", "tries", "try",
-            "tried", "plays", "play", "played", "runs", "run", "ran", "keeps", "keep", "kept", "starts", "start",
-            "started", "ends", "end", "ended", "brings", "bring", "brought", "leads", "lead", "led", "breaks", "break",
-            "broke", "broken", "buys", "buy", "bought", "sells", "sell", "sold", "cuts", "cut", "sends", "send",
-            "sent", "sets", "set", "dies", "die", "died", "kills", "kill", "killed", "warned", "warn", "warns",
-            "arrested", "arrest", "arrests", "kills", "kill", "killed", "shows", "show", "shown", "showed", "claims",
-            "claim", "claimed", "says", "say", "said", "wins", "win", "won", "loses", "lose", "lost", "seeks", "seek",
-            "sought", "finds", "find", "found", "takes", "take", "took", "taken", "makes", "make", "made", "comes",
-            "come", "came", "gets", "get", "got", "gotten", "gives", "give", "gave", "given", "adds", "add", "added",
-            "helps", "help", "helped", "hopes", "hope", "hoped", "calls", "call", "called", "meets", "meet", "met",
-            "stops", "stop", "stopped", "drops", "drop", "dropped", "plans", "plan", "planned", "vows", "vow", "vowed",
-            "wants", "want", "wanted", "needs", "need", "needed", "seems", "seem", "seemed", "looks", "look", "looked",
-            "tries", "try", "tried", "plays", "play", "played", "runs", "run", "ran", "keeps", "keep", "kept", "starts",
-            "start", "started", "ends", "end", "ended", "brings", "bring", "brought", "leads", "lead", "led", "breaks",
-            "break", "broke", "broken", "buys", "buy", "bought", "sells", "sell", "sold", "cuts", "cut", "sends",
-            "send", "sent", "sets", "set", "dies", "die", "died", "kills", "kill", "killed", "outperforms", "outperform",
-            "outperformed", "indicted", "indict", "indicts", "damages", "damage", "damaged", "stuns", "stun", "stunned",
-            "wields", "wield", "wielded", "layoffs", "layoff", "pleas", "plea", "reinstate", "reinstates", "reinstated",
-            "paralyzes", "paralyze", "paralyzed", "plummets", "plummet", "plummeted", "assaults", "assault", "assaulted",
-            "abolishes", "abolish", "abolished", "demands", "demand", "demanded", "looms", "loom", "loomed", "vanishes",
-            "vanish", "vanished", "streaming", "stream", "streamed", "wedding", "weddings", "hiding", "hide", "hidden",
-            "shuts", "shut", "opens", "open", "opened", "closes", "close", "closed", "accuses", "accuse", "accused",
-            "alleges", "allege", "alleged", "reveals", "reveal", "revealed",
-            
-            # Nouns / Adjectives / Adverbs
-            "woman", "women", "people", "police", "officer", "officers", "government", "court", "high", "state", "city",
-            "country", "world", "year", "years", "time", "times", "home", "house", "family", "school", "jobs", "work",
-            "life", "lives", "death", "deaths", "case", "cases", "news", "report", "reports", "plea", "pleas", "order",
-            "orders", "decision", "decisions", "laws", "rules", "bill", "bills", "acts", "plans", "project", "projects",
-            "program", "programs", "issue", "issues", "problem", "problems", "group", "groups", "team", "teams",
-            "member", "members", "parts", "lines", "point", "points", "number", "numbers", "percent", "crore", "lakh",
-            "million", "billion", "rupees", "dollar", "dollars", "deal", "deals", "agreement", "agreements", "talks",
-            "meeting", "meetings", "visit", "visits", "clash", "clashes", "protest", "protests", "strike", "strikes",
-            "attack", "attacks", "fires", "accident", "accidents", "crash", "crashes", "flood", "floods", "rains",
-            "storm", "storms", "quake", "quakes", "earthquake", "earthquakes", "drought", "droughts", "crisis", "crises",
-            "scandal", "scandals", "crime", "crimes", "murder", "murders", "theft", "thefts", "robbery", "robberies",
-            "fraud", "frauds", "scam", "scams", "arrest", "arrests", "trial", "trials", "verdict", "verdicts",
-            "sentence", "sentences", "jail", "jails", "prison", "prisons", "police", "cops", "judge", "judges",
-            "lawyer", "lawyers", "court", "courts", "justice", "chief", "minister", "president", "leader", "leaders",
-            "party", "parties", "polls", "election", "elections", "votes", "voter", "voters", "campaign", "campaigns",
-            "seats", "alliance", "alliances", "coalition", "coalitions", "union", "unions", "board", "boards",
-            "council", "councils", "panel", "panels", "committee", "committees", "agency", "agencies", "department",
-            "departments", "ministry", "ministries", "security", "defense", "army", "military", "forces", "border",
-            "borders", "clash", "clashes", "peace", "treaty", "treaties", "deal", "deals", "trade", "economy",
-            "market", "markets", "price", "prices", "hike", "hikes", "rise", "rises", "fall", "falls", "drop",
-            "drops", "loss", "losses", "profit", "profits", "revenue", "revenues", "taxes", "budget", "budgets",
-            "funds", "money", "cash", "loans", "debt", "debts", "banks", "firms", "company", "companies",
-            "business", "businesses", "industry", "industries", "sector", "sectors", "factory", "factories",
-            "plants", "worker", "workers", "employee", "employees", "union", "unions", "strike", "strikes",
-            "salary", "salaries", "wages", "pension", "pensions", "benefit", "benefits", "welfare", "scheme",
-            "schemes", "policy", "policies", "system", "systems", "network", "networks", "service", "services",
-            "facility", "facilities", "sites", "station", "stations", "ports", "airport", "airports", "railway",
-            "railways", "train", "trains", "buses", "roads", "highway", "highways", "bridge", "bridges", "flyover",
-            "flyovers", "tunnel", "tunnels", "metro", "metros", "cars", "vehicle", "vehicles", "truck", "trucks",
-            "bikes", "cycle", "cycles", "traffic", "jams", "congestion", "safety", "danger", "hazard", "hazards",
-            "risks", "threat", "threats", "warning", "warnings", "alert", "alerts", "notice", "notices", "rules",
-            "regulation", "regulations", "order", "orders", "bans", "limits", "restriction", "restrictions",
-            "permit", "permits", "license", "licenses", "fees", "fines", "penalty", "penalties", "charge",
-            "charges", "allegation", "allegations", "claims", "complaint", "complaints", "suits", "cases",
-            "pleas", "petition", "petitions", "appeal", "appeals", "hearing", "hearings", "verdict", "verdicts",
-            "ruling", "rulings", "judgment", "judgments", "decree", "decrees", "order", "orders", "stays",
-            
-            "young", "large", "huge", "great", "good", "worst", "best", "first", "last", "next", "past",
-            "future", "daily", "weekly", "monthly", "yearly", "annual", "local", "national", "global",
-            "international", "foreign", "public", "private", "official", "unofficial", "alleged", "accused",
-            "suspected", "reported", "proposed", "planned", "expected", "likely", "unlikely", "possible",
-            "impossible", "certain", "uncertain", "clear", "unclear", "sure", "unsure", "true", "false",
-            "real", "fake", "actual", "virtual", "online", "offline", "digital", "analog", "smart", "dumb",
-            "free", "busy", "heavy", "light", "strong", "weak", "high", "low", "warm", "cool", "clean",
-            "dirty", "fresh", "stale", "safe", "dangerous", "risky", "secure", "insecure", "open", "closed",
-            "full", "empty", "half", "double", "triple", "single", "multiple", "several", "many", "some",
-            "each", "every", "both", "either", "neither", "only", "even", "just", "very", "than", "more",
-            "less", "most", "least", "almost", "nearly", "about", "around", "over", "under", "above",
-            "below", "between", "among", "through", "during", "before", "after", "since", "until", "till",
-            "while", "when", "where", "why", "how", "what", "whose", "which", "that", "this", "these",
-            "those", "here", "there", "once", "twice", "again", "always", "never", "sometimes", "often",
-            "seldom", "rarely", "usually", "generally", "specially", "especially", "particularly", "mainly",
-            "mostly", "largely", "highly", "extremely", "really", "very", "quite", "rather", "somewhat",
-            "slightly", "fairly", "pretty", "well", "badly", "hard", "easy", "soft", "loud", "quiet",
-            "fast", "slow", "quick", "rapid", "sudden", "gradual", "smooth", "rough", "sharp", "flat",
-            "round", "square", "straight", "crooked", "bent", "tight", "loose", "wide", "narrow", "deep",
-            "shallow", "thick", "thin", "heavy", "light", "dark", "bright", "color", "colors", "black",
-            "white", "grey", "gray", "brown", "pink", "orange", "purple", "gold", "silver", "bronze",
-            "tuition", "refund", "students", "snoring", "divorce", "couple", "thunderous", "portfolio",
-            "aviation", "dreams", "tragedy", "option", "corrupt", "commissioner", "bribe", "bribes", "today"
-        }
-        return word_lower in common
-
-    # 3. Extract proper nouns (all capitalized words, including the first word)
-    punctuation = string.punctuation
-    proper_nouns = []
-    for idx, w in enumerate(words):
-        cleaned_w = w.strip(punctuation)
-        if not cleaned_w:
-            continue
-        if cleaned_w[0].isupper():
-            proper_nouns.append(cleaned_w)
-            
-    # 4. Extract all numbers (including normalized units)
-    numbers = re.findall(r'\b\d+(?:crore|lakh|million|billion|percent|pct)?\b', norm_gen)
-    
-    # Verify proper nouns are in original title or body
-    for pn in proper_nouns:
-        pn_clean = clean_word(pn)
-        if not pn_clean:
-            continue
-        
-        # 1. Direct check in source
-        if pn_clean in norm_orig or pn_clean in norm_body:
-            continue
-            
-        # 2. Check stripping possessive 's or s
-        if pn_clean.endswith('s'):
-            pn_base = pn_clean[:-1]
-            if pn_base in norm_orig or pn_base in norm_body:
-                continue
-                
-        # 3. Allow if it's a common word rephrased
-        if is_common_word(pn_clean):
-            continue
-            
-        return False, f"proper noun '{pn}' not found in source"
-
-    # Verify numbers are in original title or body
-    for num in numbers:
-        pattern = r'\b' + re.escape(num) + r'\b'
-        if not re.search(pattern, norm_orig) and not re.search(pattern, norm_body):
-            return False, f"number '{num}' not found in source"
-            
+def validate_formatting(headline):
+    cleaned = headline.strip()
+    words = cleaned.split()
+    if not cleaned:
+        return False, "empty headline"
+    if len(words) < 3:
+        return False, "too short"
+    if len(words) > 14:
+        return False, f"length {len(words)} exceeds 14 words"
     return True, None
 
 def post_process_headline(headline):
@@ -373,11 +211,14 @@ def main():
     # 4. Load Prompts
     prompt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
     headline_prompt_path = os.path.join(prompt_dir, "headline.txt")
+    headline_safe_prompt_path = os.path.join(prompt_dir, "headline_safe.txt")
     critic_prompt_path = os.path.join(prompt_dir, "critic.txt")
     
     try:
         with open(headline_prompt_path, "r", encoding="utf-8") as f:
             headline_prompt_template = f.read()
+        with open(headline_safe_prompt_path, "r", encoding="utf-8") as f:
+            headline_safe_prompt_template = f.read()
         with open(critic_prompt_path, "r", encoding="utf-8") as f:
             critic_prompt_template = f.read()
     except Exception as e:
@@ -416,7 +257,7 @@ def main():
                 
             logging.info(f"Processing ID: {article_id} ({idx + 1} of {len(rows)}) | Title: {title[:50]}...")
             
-            # B. Generate Headline
+            # B. Generate Headline (Masala)
             body_snippet = content[:1500]
             formatted_prompt = headline_prompt_template.format(title=title, body_snippet=body_snippet)
             
@@ -429,37 +270,73 @@ def main():
                 repeat_penalty=1.1,
                 echo=False
             )
-            generated_headline = response['choices'][0].get('text', '').strip()
+            masala_headline = response['choices'][0].get('text', '').strip()
             
-            if not generated_headline:
-                handle_rejection(cursor, conn, article_id, "generation", None, "LLM returned empty headline", args.test_run)
+            # C. Check masala headline and ask critic
+            critic_ans_masala = ""
+            masala_valid = False
+            
+            if masala_headline:
+                formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=masala_headline)
+                critic_response = llm(
+                    formatted_critic,
+                    max_tokens=5,
+                    stop=["<end_of_turn>"],
+                    temperature=0.0,  # Greedy validation
+                    echo=False
+                )
+                critic_ans_masala = critic_response['choices'][0].get('text', '').strip().upper()
+                if "YES" in critic_ans_masala and "NO" not in critic_ans_masala:
+                    masala_valid = True
+
+            # D. Retry flow
+            if not masala_valid:
+                # Trigger retry using safe prompt
+                formatted_safe = headline_safe_prompt_template.format(title=title, body_snippet=body_snippet)
+                
+                safe_response = llm(
+                    formatted_safe,
+                    max_tokens=50,
+                    stop=["<end_of_turn>"],
+                    temperature=0.2, # Cooler
+                    echo=False
+                )
+                safe_headline = safe_response['choices'][0].get('text', '').strip()
+                
+                # Log retry: stage "critic-retry" with both headlines
+                masala_log = masala_headline if masala_headline else "[empty]"
+                logging.info(f"Article ID: {article_id} | Stage: critic-retry | Masala: '{masala_log}' (Critic: '{critic_ans_masala}') | Safe: '{safe_headline}'")
+                
+                if not safe_headline:
+                    handle_rejection(cursor, conn, article_id, "generation", None, "LLM returned empty safe headline", args.test_run)
+                    continue
+                    
+                # Run Critic validation on safe headline
+                formatted_critic_safe = critic_prompt_template.format(body_snippet=body_snippet, headline=safe_headline)
+                critic_response_safe = llm(
+                    formatted_critic_safe,
+                    max_tokens=5,
+                    stop=["<end_of_turn>"],
+                    temperature=0.0,
+                    echo=False
+                )
+                critic_ans_safe = critic_response_safe['choices'][0].get('text', '').strip().upper()
+                
+                if "YES" not in critic_ans_safe or "NO" in critic_ans_safe:
+                    handle_rejection(cursor, conn, article_id, "critic", safe_headline, f"Critic rejected safe headline: '{critic_ans_safe}'", args.test_run)
+                    continue
+                    
+                final_headline = safe_headline
+            else:
+                final_headline = masala_headline
+
+            # E. Clean & Mechanical formatting
+            clean_headline = post_process_headline(final_headline)
+            is_valid_format, format_reason = validate_formatting(clean_headline)
+            if not is_valid_format:
+                handle_rejection(cursor, conn, article_id, "format", clean_headline, format_reason, args.test_run)
                 continue
                 
-            # C. Run Critic validation
-            formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=generated_headline)
-            
-            critic_response = llm(
-                formatted_critic,
-                max_tokens=5,
-                stop=["<end_of_turn>"],
-                temperature=0.0,  # Greedy validation
-                echo=False
-            )
-            critic_ans = critic_response['choices'][0].get('text', '').strip().upper()
-            
-            if "YES" not in critic_ans or "NO" in critic_ans:
-                handle_rejection(cursor, conn, article_id, "critic", generated_headline, f"Critic rejected headline. Response: '{critic_ans}'", args.test_run)
-                continue
-                
-            # D. Run Mechanical validation
-            is_valid, reject_reason = validate_headline(generated_headline, title, content)
-            if not is_valid:
-                handle_rejection(cursor, conn, article_id, "validator", generated_headline, reject_reason, args.test_run)
-                continue
-                
-            # E. Clean & Post-Process
-            clean_headline = post_process_headline(generated_headline)
-            
             # F. Save success transactionally
             cursor.execute("UPDATE articles SET rephrased_title = ? WHERE id = ?", (clean_headline, article_id))
             conn.commit()

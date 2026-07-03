@@ -13,6 +13,8 @@ Answer NO if ANY of these is true:
 - A quote or vow is attributed to someone who did not say it
 - A qualifier is dropped in a way that changes meaning (East Jerusalem → Jerusalem, alleged → did)
 - The headline describes a minor aside instead of the article's main subject
+- The headline contains any person, place, or organization that is not mentioned in the article
+- Any number in the headline disagrees with the article (regardless of how either writes it — digits, words, units)
 
 Otherwise answer YES.
 

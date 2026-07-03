@@ -1,5 +1,5 @@
 import sys
-from test_validation import test_should_skip_article, test_post_process_headline, test_validate_headline
+from test_validation import test_should_skip_article, test_post_process_headline, test_validate_formatting
 
 def run():
     print("Running test_should_skip_article...")
@@ -10,8 +10,8 @@ def run():
     test_post_process_headline()
     print("Passed!")
     
-    print("Running test_validate_headline...")
-    test_validate_headline()
+    print("Running test_validate_formatting...")
+    test_validate_formatting()
     print("Passed!")
     
     print("All tests passed successfully!")

@@ -1,4 +1,4 @@
-from headline_pipeline import validate_headline, post_process_headline, should_skip_article
+from headline_pipeline import validate_formatting, post_process_headline, should_skip_article
 
 def test_should_skip_article():
     # Length skip rule (> 15000 chars)
@@ -30,45 +30,27 @@ def test_post_process_headline():
     assert post_process_headline("this is a headline about Modi") == "This is a headline about Modi"
     assert post_process_headline("BJP wins election") == "BJP wins election"
 
-def test_validate_headline():
-    title = "Coonoor commissioner caught taking bribe"
-    content = "A Coonoor commissioner was caught taking a bribe of Rs 2 lakh today."
-    
+def test_validate_formatting():
     # Valid headline
-    valid, reason = validate_headline("Coonoor commissioner caught taking 2 lakh bribe", title, content)
-    assert valid == True
+    valid, reason = validate_formatting("BJP wins elections in landmark victory")
+    assert valid is True
     assert reason is None
     
-    # Invalid proper noun (not in source)
-    valid, reason = validate_headline("Mumbai commissioner caught taking bribe", title, content)
-    assert valid == False
-    assert "proper noun" in reason
+    # Empty headline
+    valid, reason = validate_formatting("")
+    assert valid is False
+    assert reason == "empty headline"
     
-    # Invalid number (not in source)
-    valid, reason = validate_headline("Coonoor commissioner caught taking 5 lakh bribe", title, content)
-    assert valid == False
-    assert "number" in reason
+    valid, reason = validate_formatting("   ")
+    assert valid is False
+    assert reason == "empty headline"
     
-    # First word proper-noun check validation
-    # "Mumbai" is the first word and capitalized. It should fail since Mumbai is not in title/content.
-    valid, reason = validate_headline("Mumbai catches corrupt commissioner", title, content)
-    assert valid == False
-    assert "proper noun 'Mumbai' not found" in reason
+    # Too short headline (< 3 words)
+    valid, reason = validate_formatting("Bribe case")
+    assert valid is False
+    assert reason == "too short"
     
-    # "Coonoor" as first word should succeed
-    valid, reason = validate_headline("Coonoor officer arrested", title, content)
-    assert valid == True
-
-    # Test possessive stripping (Coonoor's should be checked as Coonoor)
-    valid, reason = validate_headline("Coonoor's commissioner arrested", title, content)
-    assert valid == True, f"Failed possessive stripping: {reason}"
-
-    # Test common word rephrasing bypass
-    # "Rejects" and "Officer" are capitalized but are common words, so they should be allowed.
-    valid, reason = validate_headline("Coonoor Officer Rejects bribe", title, content)
-    assert valid == True, f"Failed common word check: {reason}"
-
-    # Test first word is a common word not in source
-    # "Aim" is not in the source text, but is a common word, so it should pass.
-    valid, reason = validate_headline("Aim to stop corruption in Coonoor", title, content)
-    assert valid == True, f"Failed common word first word check: {reason}"
+    # Too long headline (> 14 words)
+    valid, reason = validate_formatting("This is a very long headline that exceeds the maximum limit of fourteen words and therefore must fail validation")
+    assert valid is False
+    assert "exceeds 14 words" in reason
