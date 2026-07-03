@@ -71,30 +71,6 @@ def get_db_connection():
     return sqlite3.connect(DB_PATH)
 
 # ==============================================================================
-# --- DATABASE BOOTSTRAP (Self-healing Checkpoint Table) ---
-# ==============================================================================
-def bootstrap_database(conn):
-    cursor = conn.cursor()
-    try:
-        # Create cursor checkpoint table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS headline_checkpoint (
-                id INTEGER PRIMARY KEY CHECK (id=1),
-                last_article_id INTEGER NOT NULL
-            )
-        """)
-        # Insert initial cursor row
-        cursor.execute("""
-            INSERT OR IGNORE INTO headline_checkpoint (id, last_article_id) 
-            VALUES (1, 0)
-        """)
-        conn.commit()
-    except Exception as e:
-        logging.error(f"Failed to bootstrap headline checkpoint table: {e}")
-        # Re-raise to trigger exit if database connection is broken
-        raise e
-
-# ==============================================================================
 # --- SKIP RULES & MECHANICAL VALIDATOR ---
 # ==============================================================================
 def should_skip_article(title, content):
@@ -183,6 +159,19 @@ def post_process_headline(headline):
     return headline
 
 # ==============================================================================
+# --- REJECTION & ERROR HANDLERS ---
+# ==============================================================================
+def handle_rejection(cursor, conn, article_id, stage, generated_headline, reason, is_test_run):
+    log_rejection(article_id, stage, generated_headline, reason)
+    if not is_test_run:
+        try:
+            cursor.execute("UPDATE articles SET rephrased_title = '' WHERE id = ?", (article_id,))
+            conn.commit()
+        except Exception as e:
+            logging.critical(f"Database write failed during rejection update: {e}")
+            sys.exit(1)
+
+# ==============================================================================
 # --- AI INFERENCE SETUP ---
 # ==============================================================================
 def load_llm():
@@ -213,17 +202,15 @@ def load_llm():
 # ==============================================================================
 def main():
     parser = argparse.ArgumentParser(description="Satya Headline Service")
-    parser.add_argument("--test-run", action="store_true", help="Process 50 recent articles for verification without advancing global checkpoint")
-    parser.add_argument("--retitle", action="store_true", help="Process articles even if they already have a rephrased_title")
+    parser.add_argument("--test-run", action="store_true", help="Process 50 recent articles without consuming the queue with rejections")
     args = parser.parse_args()
     
     start_time = time.time()
     logging.info("--- Starting News Headline Pipeline ---")
     
-    # 1. Connect and bootstrap
+    # 1. Connect to Database
     try:
         conn = get_db_connection()
-        bootstrap_database(conn)
         cursor = conn.cursor()
     except Exception as e:
         logging.critical(f"Failed database initialization: {e}")
@@ -232,42 +219,16 @@ def main():
     # 2. Determine batch size
     batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 500))
     
-    # 3. Read cursor and query articles
+    # 3. Query articles: Fetch recent unprocessed articles
     try:
-        if args.test_run:
-            # For wet-validation, fetch 50 recent articles
-            query = """
-                SELECT id, title, content 
-                FROM articles 
-                WHERE rephrased_title IS NULL 
-                ORDER BY id DESC 
-                LIMIT ?
-            """
-            cursor.execute(query, (batch_size,))
-        else:
-            # Get checkpoint cursor
-            cursor.execute("SELECT last_article_id FROM headline_checkpoint WHERE id = 1")
-            last_id = cursor.fetchone()[0]
-            logging.info(f"Checkpoint cursor last_article_id: {last_id}")
-            
-            if args.retitle:
-                query = """
-                    SELECT id, title, content 
-                    FROM articles 
-                    WHERE id > ? 
-                    ORDER BY id ASC 
-                    LIMIT ?
-                """
-            else:
-                query = """
-                    SELECT id, title, content 
-                    FROM articles 
-                    WHERE id > ? AND rephrased_title IS NULL 
-                    ORDER BY id ASC 
-                    LIMIT ?
-                """
-            cursor.execute(query, (last_id, batch_size))
-            
+        query = """
+            SELECT id, title, content 
+            FROM articles 
+            WHERE rephrased_title IS NULL 
+            ORDER BY id DESC 
+            LIMIT ?
+        """
+        cursor.execute(query, (batch_size,))
         rows = cursor.fetchall()
     except Exception as e:
         logging.critical(f"Failed to query database articles: {e}")
@@ -323,11 +284,7 @@ def main():
         try:
             # A. Check skip rules
             if should_skip_article(title, content):
-                log_rejection(article_id, "skip", None, "Skipped by listicle/live-blog title filter or length > 15k chars")
-                cursor.execute("UPDATE articles SET rephrased_title = NULL WHERE id = ?", (article_id,))
-                if not args.test_run:
-                    cursor.execute("UPDATE headline_checkpoint SET last_article_id = ? WHERE id = 1", (article_id,))
-                conn.commit()
+                handle_rejection(cursor, conn, article_id, "skip", None, "Skipped by listicle/live-blog title filter or length > 15k chars", args.test_run)
                 continue
                 
             logging.info(f"Processing ID: {article_id} | Title: {title[:50]}...")
@@ -348,11 +305,7 @@ def main():
             generated_headline = response['choices'][0].get('text', '').strip()
             
             if not generated_headline:
-                log_rejection(article_id, "generation", None, "LLM returned empty headline")
-                cursor.execute("UPDATE articles SET rephrased_title = NULL WHERE id = ?", (article_id,))
-                if not args.test_run:
-                    cursor.execute("UPDATE headline_checkpoint SET last_article_id = ? WHERE id = 1", (article_id,))
-                conn.commit()
+                handle_rejection(cursor, conn, article_id, "generation", None, "LLM returned empty headline", args.test_run)
                 continue
                 
             # C. Run Critic validation
@@ -368,30 +321,20 @@ def main():
             critic_ans = critic_response['choices'][0].get('text', '').strip().upper()
             
             if "YES" not in critic_ans or "NO" in critic_ans:
-                log_rejection(article_id, "critic", generated_headline, f"Critic rejected headline. Response: '{critic_ans}'")
-                cursor.execute("UPDATE articles SET rephrased_title = NULL WHERE id = ?", (article_id,))
-                if not args.test_run:
-                    cursor.execute("UPDATE headline_checkpoint SET last_article_id = ? WHERE id = 1", (article_id,))
-                conn.commit()
+                handle_rejection(cursor, conn, article_id, "critic", generated_headline, f"Critic rejected headline. Response: '{critic_ans}'", args.test_run)
                 continue
                 
             # D. Run Mechanical validation
             is_valid, reject_reason = validate_headline(generated_headline, title, content)
             if not is_valid:
-                log_rejection(article_id, "validator", generated_headline, reject_reason)
-                cursor.execute("UPDATE articles SET rephrased_title = NULL WHERE id = ?", (article_id,))
-                if not args.test_run:
-                    cursor.execute("UPDATE headline_checkpoint SET last_article_id = ? WHERE id = 1", (article_id,))
-                conn.commit()
+                handle_rejection(cursor, conn, article_id, "validator", generated_headline, reject_reason, args.test_run)
                 continue
                 
             # E. Clean & Post-Process
             clean_headline = post_process_headline(generated_headline)
             
-            # F. Save transactionally
+            # F. Save success transactionally
             cursor.execute("UPDATE articles SET rephrased_title = ? WHERE id = ?", (clean_headline, article_id))
-            if not args.test_run:
-                cursor.execute("UPDATE headline_checkpoint SET last_article_id = ? WHERE id = 1", (article_id,))
             conn.commit()
             
             processed_count += 1
@@ -400,14 +343,9 @@ def main():
         except Exception as e:
             # Per-article poison pill protection
             logging.error(f"Error processing article {article_id}: {e}")
-            log_rejection(article_id, "exception", None, f"Exception occurred: {str(e)}")
             try:
-                cursor.execute("UPDATE articles SET rephrased_title = NULL WHERE id = ?", (article_id,))
-                if not args.test_run:
-                    cursor.execute("UPDATE headline_checkpoint SET last_article_id = ? WHERE id = 1", (article_id,))
-                conn.commit()
+                handle_rejection(cursor, conn, article_id, "exception", None, f"Exception occurred: {str(e)}", args.test_run)
             except Exception as db_e:
-                # Critical database loss exits 1
                 logging.critical(f"Database update failed during fallback transaction: {db_e}")
                 sys.exit(1)
                 
@@ -415,8 +353,8 @@ def main():
     conn.close()
     logging.info(f"--- Pipeline Finished. Processed {processed_count} headlines successfully. ---")
     
-    # If not a test run and we processed the full batch size, we indicate there may be more
-    if not args.test_run and len(rows) == batch_size:
+    # If we processed the full batch size, we indicate there may be more
+    if len(rows) == batch_size:
         print("has_more=true")
     else:
         print("has_more=false")

@@ -40,7 +40,6 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install huggingface_hub libsql
-          export CMAKE_ARGS="-DLLAMA_AVX=OFF -DLLAMA_AVX2=OFF -DLLAMA_FMA=OFF"
           pip install --no-cache-dir "llama-cpp-python>=0.2.90"
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
