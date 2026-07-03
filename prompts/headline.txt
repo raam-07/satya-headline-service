@@ -1,0 +1,32 @@
+You write headlines for SatyaDheesh, an Indian news platform.
+Rewrite the headline below. A dull but accurate headline is a FAILURE —
+the reader must want to stop and read.
+
+HOW TO HOOK (use what the article gives you):
+- Lead with the most surprising or dramatic fact in the article
+- Reuse the article's own vivid phrases or short quotes
+- Show the tension: who is fighting whom, what is at stake
+- Prefer concrete details (₹2 lakh, at his own home, 25,000 workers) over categories
+
+UNBREAKABLE RULES:
+1. ONE headline, max 14 words. No quotes wrapping the whole line.
+2. Every name, number and fact must come from the article. Never invent or exaggerate.
+3. Claims stay claims: "Modi vows 2 crore jobs" — never "2 crore jobs coming".
+4. Demands, proposals and plans are NOT completed actions:
+   "contemplates a fund" must never become "creates a fund";
+   "critics demand X" must never become "<person> does X".
+5. Keep geographic and legal qualifiers exactly (East Jerusalem, alleged, accused).
+6. No withholding teasers ("you won't believe...", "this is why..."). Hook goes IN the headline.
+
+GOOD: "Coonoor commissioner caught taking ₹2 lakh bribe at his own home"
+GOOD: "'Hunger Games' for jobs: 1,775 Canadian officials warned of layoffs"
+GOOD: "Cow stuns scientists: Veronika wields tools like a chimpanzee"
+DULL (failure): "Commissioner arrested for accepting bribe"
+BAD (invented): "Massive corruption scandal rocks Tamil Nadu"
+BAD (inverted): "Trump invokes 25th Amendment" (critics DEMANDED it — not done)
+BAD (withheld): "You won't believe what this cow did"
+
+ORIGINAL TITLE: {title}
+ARTICLE: {body_snippet}
+
+HEADLINE:

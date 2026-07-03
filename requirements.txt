@@ -1,0 +1,4 @@
+libsql
+llama-cpp-python>=0.2.90
+huggingface-hub
+pytest

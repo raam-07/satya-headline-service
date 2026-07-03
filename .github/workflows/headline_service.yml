@@ -1,0 +1,105 @@
+name: Satya Headline Service
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'
+  workflow_dispatch:
+  repository_dispatch:
+    types: [trigger-headlines]
+
+concurrency:
+  group: satya-headlines
+  cancel-in-progress: false
+
+jobs:
+  run_headlines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    permissions:
+      actions: write
+      issues: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-headlines-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-headlines-
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install huggingface_hub libsql
+          export CMAKE_ARGS="-DLLAMA_AVX=OFF -DLLAMA_AVX2=OFF -DLLAMA_FMA=OFF"
+          pip install --no-cache-dir "llama-cpp-python>=0.2.90"
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Cache Gemma Model
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: ./models
+          key: gemma-2-9b-it-Q6_K
+
+      - name: Download Gemma Model
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./models
+          echo "Downloading Gemma 9B IT model via huggingface_hub..."
+          python -c "
+          from huggingface_hub import hf_hub_download
+          hf_hub_download(
+            repo_id='bartowski/gemma-2-9b-it-GGUF',
+            filename='gemma-2-9b-it-Q6_K.gguf',
+            local_dir='./models'
+          )
+          "
+
+      - name: Run Headline Pipeline
+        id: run-pipeline
+        env:
+          SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
+          SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
+        run: |
+          python headline_pipeline.py | tee pipeline_output.log
+          if grep -q "has_more=true" pipeline_output.log; then
+            echo "has_more=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_more=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Self Trigger Next Run
+        if: steps.run-pipeline.outputs.has_more == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "More articles remain. Self-triggering next run..."
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/headline_service.yml/dispatches \
+            -d '{"ref":"${{ github.ref_name }}"}'
+
+      - name: Open GitHub Issue on Failure
+        if: failure()
+        uses: actions/github-script@v6
+        with:
+          script: |
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: 'Satya Headline Service Run Failed',
+              body: 'The headline service GHA execution failed. Please check the logs.'
+            })
