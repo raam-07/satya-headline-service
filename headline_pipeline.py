@@ -217,7 +217,7 @@ def main():
         sys.exit(1)
         
     # 2. Determine batch size
-    batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 500))
+    batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 100))
     
     # 3. Query articles: Fetch recent unprocessed articles
     try:
