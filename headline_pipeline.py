@@ -56,6 +56,8 @@ load_env()
 
 default_db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'satya.db')
 DB_PATH = os.environ.get('SATYA_DB_PATH', default_db_path)
+if DB_PATH:
+    DB_PATH = DB_PATH.strip()
 
 def get_db_connection():
     db_url = os.environ.get('SATYA_DB_URL')
