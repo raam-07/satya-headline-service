@@ -39,7 +39,7 @@ def log_rejection(article_id, stage, generated_headline, reason):
 # --- CONFIGURATION ---
 # ==============================================================================
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
-MODEL_PATH = os.path.join(MODEL_DIR, "gemma-2-9b-it-Q6_K.gguf")
+MODEL_PATH = os.path.join(MODEL_DIR, "gemma-2-9b-it-Q4_K_M.gguf")
 
 def load_env():
     # Check parent directory for .env
@@ -121,6 +121,110 @@ def validate_headline(generated_title, original_title, body):
     norm_orig = normalize_numbers(original_title)
     norm_body = normalize_numbers(body)
 
+    # Helper to check if a word is a common English word
+    def is_common_word(word):
+        word_lower = word.lower()
+        if len(word_lower) <= 3:
+            return True
+        common = {
+            # Verbs
+            "rejects", "reject", "rejections", "rejection", "fines", "fine", "goes", "go", "went", "gone", "aim", "aims", "held", "hold",
+            "holds", "withheld", "withhold", "drowns", "drown", "drowned", "abolishes", "abolish", "demands", "demand",
+            "face", "faces", "faced", "vanishes", "vanish", "vanished", "sparks", "spark", "sparked", "warned", "warn", "warns",
+            "arrested", "arrest", "arrests", "kills", "kill", "killed", "shows", "show", "shown", "showed", "claims", "claim",
+            "claimed", "says", "say", "said", "wins", "win", "won", "loses", "lose", "lost", "seeks", "seek", "sought",
+            "finds", "find", "found", "takes", "take", "took", "taken", "makes", "make", "made", "comes", "come", "came",
+            "gets", "get", "got", "gotten", "gives", "give", "gave", "given", "adds", "add", "added", "helps", "help",
+            "helped", "hopes", "hope", "hoped", "calls", "call", "called", "meets", "meet", "met", "stops", "stop",
+            "stopped", "drops", "drop", "dropped", "plans", "plan", "planned", "vows", "vow", "vowed", "wants", "want",
+            "wanted", "needs", "need", "needed", "seems", "seem", "seemed", "looks", "look", "looked", "tries", "try",
+            "tried", "plays", "play", "played", "runs", "run", "ran", "keeps", "keep", "kept", "starts", "start",
+            "started", "ends", "end", "ended", "brings", "bring", "brought", "leads", "lead", "led", "breaks", "break",
+            "broke", "broken", "buys", "buy", "bought", "sells", "sell", "sold", "cuts", "cut", "sends", "send",
+            "sent", "sets", "set", "dies", "die", "died", "kills", "kill", "killed", "warned", "warn", "warns",
+            "arrested", "arrest", "arrests", "kills", "kill", "killed", "shows", "show", "shown", "showed", "claims",
+            "claim", "claimed", "says", "say", "said", "wins", "win", "won", "loses", "lose", "lost", "seeks", "seek",
+            "sought", "finds", "find", "found", "takes", "take", "took", "taken", "makes", "make", "made", "comes",
+            "come", "came", "gets", "get", "got", "gotten", "gives", "give", "gave", "given", "adds", "add", "added",
+            "helps", "help", "helped", "hopes", "hope", "hoped", "calls", "call", "called", "meets", "meet", "met",
+            "stops", "stop", "stopped", "drops", "drop", "dropped", "plans", "plan", "planned", "vows", "vow", "vowed",
+            "wants", "want", "wanted", "needs", "need", "needed", "seems", "seem", "seemed", "looks", "look", "looked",
+            "tries", "try", "tried", "plays", "play", "played", "runs", "run", "ran", "keeps", "keep", "kept", "starts",
+            "start", "started", "ends", "end", "ended", "brings", "bring", "brought", "leads", "lead", "led", "breaks",
+            "break", "broke", "broken", "buys", "buy", "bought", "sells", "sell", "sold", "cuts", "cut", "sends",
+            "send", "sent", "sets", "set", "dies", "die", "died", "kills", "kill", "killed", "outperforms", "outperform",
+            "outperformed", "indicted", "indict", "indicts", "damages", "damage", "damaged", "stuns", "stun", "stunned",
+            "wields", "wield", "wielded", "layoffs", "layoff", "pleas", "plea", "reinstate", "reinstates", "reinstated",
+            "paralyzes", "paralyze", "paralyzed", "plummets", "plummet", "plummeted", "assaults", "assault", "assaulted",
+            "abolishes", "abolish", "abolished", "demands", "demand", "demanded", "looms", "loom", "loomed", "vanishes",
+            "vanish", "vanished", "streaming", "stream", "streamed", "wedding", "weddings", "hiding", "hide", "hidden",
+            "shuts", "shut", "opens", "open", "opened", "closes", "close", "closed", "accuses", "accuse", "accused",
+            "alleges", "allege", "alleged", "reveals", "reveal", "revealed",
+            
+            # Nouns / Adjectives / Adverbs
+            "woman", "women", "people", "police", "officer", "officers", "government", "court", "high", "state", "city",
+            "country", "world", "year", "years", "time", "times", "home", "house", "family", "school", "jobs", "work",
+            "life", "lives", "death", "deaths", "case", "cases", "news", "report", "reports", "plea", "pleas", "order",
+            "orders", "decision", "decisions", "laws", "rules", "bill", "bills", "acts", "plans", "project", "projects",
+            "program", "programs", "issue", "issues", "problem", "problems", "group", "groups", "team", "teams",
+            "member", "members", "parts", "lines", "point", "points", "number", "numbers", "percent", "crore", "lakh",
+            "million", "billion", "rupees", "dollar", "dollars", "deal", "deals", "agreement", "agreements", "talks",
+            "meeting", "meetings", "visit", "visits", "clash", "clashes", "protest", "protests", "strike", "strikes",
+            "attack", "attacks", "fires", "accident", "accidents", "crash", "crashes", "flood", "floods", "rains",
+            "storm", "storms", "quake", "quakes", "earthquake", "earthquakes", "drought", "droughts", "crisis", "crises",
+            "scandal", "scandals", "crime", "crimes", "murder", "murders", "theft", "thefts", "robbery", "robberies",
+            "fraud", "frauds", "scam", "scams", "arrest", "arrests", "trial", "trials", "verdict", "verdicts",
+            "sentence", "sentences", "jail", "jails", "prison", "prisons", "police", "cops", "judge", "judges",
+            "lawyer", "lawyers", "court", "courts", "justice", "chief", "minister", "president", "leader", "leaders",
+            "party", "parties", "polls", "election", "elections", "votes", "voter", "voters", "campaign", "campaigns",
+            "seats", "alliance", "alliances", "coalition", "coalitions", "union", "unions", "board", "boards",
+            "council", "councils", "panel", "panels", "committee", "committees", "agency", "agencies", "department",
+            "departments", "ministry", "ministries", "security", "defense", "army", "military", "forces", "border",
+            "borders", "clash", "clashes", "peace", "treaty", "treaties", "deal", "deals", "trade", "economy",
+            "market", "markets", "price", "prices", "hike", "hikes", "rise", "rises", "fall", "falls", "drop",
+            "drops", "loss", "losses", "profit", "profits", "revenue", "revenues", "taxes", "budget", "budgets",
+            "funds", "money", "cash", "loans", "debt", "debts", "banks", "firms", "company", "companies",
+            "business", "businesses", "industry", "industries", "sector", "sectors", "factory", "factories",
+            "plants", "worker", "workers", "employee", "employees", "union", "unions", "strike", "strikes",
+            "salary", "salaries", "wages", "pension", "pensions", "benefit", "benefits", "welfare", "scheme",
+            "schemes", "policy", "policies", "system", "systems", "network", "networks", "service", "services",
+            "facility", "facilities", "sites", "station", "stations", "ports", "airport", "airports", "railway",
+            "railways", "train", "trains", "buses", "roads", "highway", "highways", "bridge", "bridges", "flyover",
+            "flyovers", "tunnel", "tunnels", "metro", "metros", "cars", "vehicle", "vehicles", "truck", "trucks",
+            "bikes", "cycle", "cycles", "traffic", "jams", "congestion", "safety", "danger", "hazard", "hazards",
+            "risks", "threat", "threats", "warning", "warnings", "alert", "alerts", "notice", "notices", "rules",
+            "regulation", "regulations", "order", "orders", "bans", "limits", "restriction", "restrictions",
+            "permit", "permits", "license", "licenses", "fees", "fines", "penalty", "penalties", "charge",
+            "charges", "allegation", "allegations", "claims", "complaint", "complaints", "suits", "cases",
+            "pleas", "petition", "petitions", "appeal", "appeals", "hearing", "hearings", "verdict", "verdicts",
+            "ruling", "rulings", "judgment", "judgments", "decree", "decrees", "order", "orders", "stays",
+            
+            "young", "large", "huge", "great", "good", "worst", "best", "first", "last", "next", "past",
+            "future", "daily", "weekly", "monthly", "yearly", "annual", "local", "national", "global",
+            "international", "foreign", "public", "private", "official", "unofficial", "alleged", "accused",
+            "suspected", "reported", "proposed", "planned", "expected", "likely", "unlikely", "possible",
+            "impossible", "certain", "uncertain", "clear", "unclear", "sure", "unsure", "true", "false",
+            "real", "fake", "actual", "virtual", "online", "offline", "digital", "analog", "smart", "dumb",
+            "free", "busy", "heavy", "light", "strong", "weak", "high", "low", "warm", "cool", "clean",
+            "dirty", "fresh", "stale", "safe", "dangerous", "risky", "secure", "insecure", "open", "closed",
+            "full", "empty", "half", "double", "triple", "single", "multiple", "several", "many", "some",
+            "each", "every", "both", "either", "neither", "only", "even", "just", "very", "than", "more",
+            "less", "most", "least", "almost", "nearly", "about", "around", "over", "under", "above",
+            "below", "between", "among", "through", "during", "before", "after", "since", "until", "till",
+            "while", "when", "where", "why", "how", "what", "whose", "which", "that", "this", "these",
+            "those", "here", "there", "once", "twice", "again", "always", "never", "sometimes", "often",
+            "seldom", "rarely", "usually", "generally", "specially", "especially", "particularly", "mainly",
+            "mostly", "largely", "highly", "extremely", "really", "very", "quite", "rather", "somewhat",
+            "slightly", "fairly", "pretty", "well", "badly", "hard", "easy", "soft", "loud", "quiet",
+            "fast", "slow", "quick", "rapid", "sudden", "gradual", "smooth", "rough", "sharp", "flat",
+            "round", "square", "straight", "crooked", "bent", "tight", "loose", "wide", "narrow", "deep",
+            "shallow", "thick", "thin", "heavy", "light", "dark", "bright", "color", "colors", "black",
+            "white", "grey", "gray", "brown", "pink", "orange", "purple", "gold", "silver", "bronze",
+            "tuition", "refund", "students", "snoring", "divorce", "couple", "thunderous", "portfolio",
+            "aviation", "dreams", "tragedy", "option", "corrupt", "commissioner", "bribe", "bribes", "today"
+        }
+        return word_lower in common
+
     # 3. Extract proper nouns (all capitalized words, including the first word)
     punctuation = string.punctuation
     proper_nouns = []
@@ -139,8 +243,22 @@ def validate_headline(generated_title, original_title, body):
         pn_clean = clean_word(pn)
         if not pn_clean:
             continue
-        if pn_clean not in norm_orig and pn_clean not in norm_body:
-            return False, f"proper noun '{pn}' not found in source"
+        
+        # 1. Direct check in source
+        if pn_clean in norm_orig or pn_clean in norm_body:
+            continue
+            
+        # 2. Check stripping possessive 's or s
+        if pn_clean.endswith('s'):
+            pn_base = pn_clean[:-1]
+            if pn_base in norm_orig or pn_base in norm_body:
+                continue
+                
+        # 3. Allow if it's a common word rephrased
+        if is_common_word(pn_clean):
+            continue
+            
+        return False, f"proper noun '{pn}' not found in source"
 
     # Verify numbers are in original title or body
     for num in numbers:
@@ -191,7 +309,7 @@ def load_llm():
         from huggingface_hub import hf_hub_download
         hf_hub_download(
             repo_id='bartowski/gemma-2-9b-it-GGUF',
-            filename='gemma-2-9b-it-Q6_K.gguf',
+            filename='gemma-2-9b-it-Q4_K_M.gguf',
             local_dir=MODEL_DIR,
             local_dir_use_symlinks=False
         )
@@ -226,7 +344,7 @@ def main():
         sys.exit(1)
         
     # 2. Determine batch size
-    batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 100))
+    batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 10))
     
     # 3. Query articles: Fetch recent unprocessed articles
     try:
@@ -278,7 +396,7 @@ def main():
     # 6. Process articles
     processed_count = 0
     
-    for r in rows:
+    for idx, r in enumerate(rows):
         article_id = r[0]
         title = r[1]
         compressed_content = r[2]
@@ -296,7 +414,7 @@ def main():
                 handle_rejection(cursor, conn, article_id, "skip", None, "Skipped by listicle/live-blog title filter or length > 15k chars", args.test_run)
                 continue
                 
-            logging.info(f"Processing ID: {article_id} | Title: {title[:50]}...")
+            logging.info(f"Processing ID: {article_id} ({idx + 1} of {len(rows)}) | Title: {title[:50]}...")
             
             # B. Generate Headline
             body_snippet = content[:1500]

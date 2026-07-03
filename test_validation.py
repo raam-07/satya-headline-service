@@ -58,3 +58,17 @@ def test_validate_headline():
     # "Coonoor" as first word should succeed
     valid, reason = validate_headline("Coonoor officer arrested", title, content)
     assert valid == True
+
+    # Test possessive stripping (Coonoor's should be checked as Coonoor)
+    valid, reason = validate_headline("Coonoor's commissioner arrested", title, content)
+    assert valid == True, f"Failed possessive stripping: {reason}"
+
+    # Test common word rephrasing bypass
+    # "Rejects" and "Officer" are capitalized but are common words, so they should be allowed.
+    valid, reason = validate_headline("Coonoor Officer Rejects bribe", title, content)
+    assert valid == True, f"Failed common word check: {reason}"
+
+    # Test first word is a common word not in source
+    # "Aim" is not in the source text, but is a common word, so it should pass.
+    valid, reason = validate_headline("Aim to stop corruption in Coonoor", title, content)
+    assert valid == True, f"Failed common word first word check: {reason}"
