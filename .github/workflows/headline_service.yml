@@ -23,6 +23,32 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      - name: Validate Database Connection
+        env:
+          SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
+          SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
+        run: |
+          echo "Testing database connection..."
+          # Strip URL manually in bash
+          URL=$(echo "$SATYA_DB_URL" | xargs)
+          TOKEN=$(echo "$SATYA_DB_TOKEN" | xargs)
+          
+          # Convert libsql:// to https://
+          HTTP_URL="${URL/libsql:\/\//https:\/\/}"
+          
+          echo "Connecting to $HTTP_URL/v2/pipeline..."
+          RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{"requests":[{"type":"execute","stmt":{"sql":"SELECT 1"}}]}' \
+            "$HTTP_URL/v2/pipeline")
+            
+          if [ "$RESPONSE_CODE" -ne 200 ]; then
+            echo "Database connection failed with HTTP status code $RESPONSE_CODE"
+            exit 1
+          fi
+          echo "Database connection verified successfully!"
+
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
         with:
