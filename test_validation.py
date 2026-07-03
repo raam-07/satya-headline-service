@@ -11,6 +11,12 @@ def test_should_skip_article():
     assert should_skip_article("election guide from A to Z", "content") == True
     assert should_skip_article("Title | Segment 2 | Segment 3", "content") == True
     
+    # Opinion skip rules
+    assert should_skip_article("Normal Title", "Opinion: this is a column") == True
+    assert should_skip_article("Opinion | Normal Title", "content") == True
+    assert should_skip_article("Normal Title | Comment", "content") == True
+    assert should_skip_article("Editorial: Normal Title", "content") == True
+
     # Regular title and content should not skip
     assert should_skip_article("Normal Headline Title", "Short content") == False
 

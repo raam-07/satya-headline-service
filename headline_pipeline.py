@@ -93,6 +93,12 @@ def should_skip_article(title, content):
     if title.count('|') >= 2:
         return True
         
+    if content.startswith("Opinion"):
+        return True
+        
+    if "Opinion |" in title or "| Comment" in title or "Editorial:" in title:
+        return True
+        
     return False
 
 def validate_formatting(headline):
