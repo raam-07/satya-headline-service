@@ -15,6 +15,9 @@ Answer NO if ANY of these is true:
 - The headline describes a minor aside instead of the article's main subject
 - The headline contains any person, place, or organization that is not mentioned in the article
 - Any number in the headline disagrees with the article (regardless of how either writes it — digits, words, units)
+- An approval, allegation, or direction to consider something is stated as the completed act itself
+  (e.g. "booked for allegedly threatening" → "threatens"; "cleared proposal to buy" → "to buy";
+   "directed to consider a probe" → "orders probe")
 
 Otherwise answer YES.
 

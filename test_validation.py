@@ -18,10 +18,13 @@ def test_post_process_headline():
     # Trailing periods
     assert post_process_headline("This is a headline.") == "This is a headline"
     
-    # Wrapping quotes
+    # Wrapping quotes and asterisks
     assert post_process_headline('"This is a headline"') == "This is a headline"
     assert post_process_headline("'This is a headline'") == "This is a headline"
     assert post_process_headline('""This is a headline""') == "This is a headline"
+    assert post_process_headline("*This is a headline*") == "This is a headline"
+    assert post_process_headline("**This is a headline**") == "This is a headline"
+    assert post_process_headline('"*This is a headline*"') == "This is a headline"
     
     # Collapse whitespace
     assert post_process_headline("This   is   a   headline") == "This is a headline"

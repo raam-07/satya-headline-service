@@ -108,8 +108,10 @@ def validate_formatting(headline):
 
 def post_process_headline(headline):
     headline = headline.strip()
-    # Strip wrapping quotes
-    while (headline.startswith('"') and headline.endswith('"')) or (headline.startswith("'") and headline.endswith("'")):
+    # Strip wrapping quotes and asterisks
+    while (headline.startswith('"') and headline.endswith('"')) or \
+          (headline.startswith("'") and headline.endswith("'")) or \
+          (headline.startswith('*') and headline.endswith('*')):
         headline = headline[1:-1].strip()
     # Strip trailing period
     if headline.endswith('.'):
