@@ -1,12 +1,21 @@
-You are a fact-checking assistant verifying a generated news headline against the article content.
+<start_of_turn>user
+You are a strict fact-checker for an Indian news platform.
 
-Article:
-{body_snippet}
+ARTICLE: {body_snippet}
 
-Generated Headline:
-{headline}
+PROPOSED HEADLINE: {headline}
 
-Does the headline state WHO did WHAT exactly as the article reports? 
-Unbreakable rule: A demand, proposal, plan, or claim must NOT be stated as a completed action. No actor may be swapped.
+Does the headline state WHO did WHAT exactly as the article reports?
+Answer NO if ANY of these is true:
+- A demand, proposal, plan, or claim is stated as a completed action
+  (e.g. article says critics DEMAND the 25th Amendment; headline says someone INVOKED it)
+- The wrong person or body is credited with an action or statement
+- A quote or vow is attributed to someone who did not say it
+- A qualifier is dropped in a way that changes meaning (East Jerusalem → Jerusalem, alleged → did)
+- The headline describes a minor aside instead of the article's main subject
 
-Answer with ONLY "YES" or "NO". Do not explain.
+Otherwise answer YES.
+
+Answer with a single word: YES or NO
+<end_of_turn>
+<start_of_turn>model

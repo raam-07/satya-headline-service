@@ -334,15 +334,14 @@ def main():
             
             # B. Generate Headline
             body_snippet = content[:1500]
-            prompt = headline_prompt_template.format(title=title, body_snippet=body_snippet)
-            formatted_prompt = f"<start_of_turn>user\n{prompt}\n<end_of_turn>\n<start_of_turn>model\n"
+            formatted_prompt = headline_prompt_template.format(title=title, body_snippet=body_snippet)
             
             response = llm(
                 formatted_prompt,
-                max_tokens=60,
+                max_tokens=50,
                 top_p=0.9,
                 stop=["<end_of_turn>"],
-                temperature=0.2,
+                temperature=0.4,
                 repeat_penalty=1.1,
                 echo=False
             )
@@ -357,12 +356,11 @@ def main():
                 continue
                 
             # C. Run Critic validation
-            critic_prompt = critic_prompt_template.format(body_snippet=body_snippet, headline=generated_headline)
-            formatted_critic = f"<start_of_turn>user\n{critic_prompt}\n<end_of_turn>\n<start_of_turn>model\n"
+            formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=generated_headline)
             
             critic_response = llm(
                 formatted_critic,
-                max_tokens=10,
+                max_tokens=5,
                 stop=["<end_of_turn>"],
                 temperature=0.0,  # Greedy validation
                 echo=False
