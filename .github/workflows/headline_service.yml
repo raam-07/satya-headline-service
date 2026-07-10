@@ -199,7 +199,7 @@ jobs:
           shard = int(os.environ['SHARD_ID'])
           cutoff = int(time.time()) - 86400
           host = URL.replace('libsql://', 'https://').rstrip('/')
-          stmt = {'sql': 'SELECT id FROM articles WHERE rephrased_title IS NULL AND scraped_at >= ? AND (id % 20) = ? LIMIT 1', 'args': [cutoff, shard]}
+          stmt = {'sql': 'SELECT id FROM articles WHERE rephrased_title IS NULL AND rephrased_article IS NOT NULL AND scraped_at >= ? AND (id % 20) = ? LIMIT 1', 'args': [cutoff, shard]}
           body = {'requests':[{'type':'execute','stmt':stmt},{'type':'close'}]}
           req = urllib.request.Request(host+'/v2/pipeline', data=json.dumps(body).encode(),
                   headers={'Authorization':f'Bearer {TOK}','Content-Type':'application/json'})

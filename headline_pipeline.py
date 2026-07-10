@@ -199,6 +199,7 @@ def main():
                 SELECT id, title, content 
                 FROM articles 
                 WHERE rephrased_title IS NULL 
+                  AND rephrased_article IS NOT NULL
                   AND scraped_at >= ?
                   AND (id % ?) = ?
                 ORDER BY id DESC 
@@ -210,6 +211,7 @@ def main():
                 SELECT id, title, content 
                 FROM articles 
                 WHERE rephrased_title IS NULL 
+                  AND rephrased_article IS NOT NULL
                   AND scraped_at >= ?
                 ORDER BY id DESC 
                 LIMIT ?
