@@ -311,3 +311,12 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/actions/workflows/headline_service.yml/dispatches \
             -d "{\"ref\":\"${{ github.ref_name }}\", \"inputs\": {\"shard\": \"validator\"}}"
+
+      - name: Trigger Classifier Workflow
+        if: ${{ steps.run-validator.outputs.has_more != 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TRIGGER_CLASSIFIER_TOKEN }}
+          repository: raam-07/SATYA-NEWS-CLASSIFIER
+          event-type: trigger-classifier
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
