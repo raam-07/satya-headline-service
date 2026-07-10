@@ -196,7 +196,7 @@ def main():
         if shard is not None and num_shards > 1:
             logging.info(f"Running in shard mode: shard {shard} of {num_shards}")
             query = """
-                SELECT id, title, content 
+                SELECT id, title, rephrased_article 
                 FROM articles 
                 WHERE rephrased_title IS NULL 
                   AND rephrased_article IS NOT NULL
@@ -208,7 +208,7 @@ def main():
             cursor.execute(query, (cutoff_timestamp, num_shards, shard, batch_size))
         else:
             query = """
-                SELECT id, title, content 
+                SELECT id, title, rephrased_article 
                 FROM articles 
                 WHERE rephrased_title IS NULL 
                   AND rephrased_article IS NOT NULL
@@ -265,13 +265,13 @@ def main():
     for idx, r in enumerate(rows):
         article_id = r[0]
         title = r[1]
-        compressed_content = r[2]
+        compressed_summary = r[2]
         
-        # Decompress content
+        # Decompress summary
         try:
-            content = zlib.decompress(compressed_content).decode('utf-8') if compressed_content else ""
+            content = zlib.decompress(compressed_summary).decode('utf-8') if compressed_summary else ""
         except Exception as e:
-            logging.error(f"Failed to decompress content for article {article_id}: {e}")
+            logging.error(f"Failed to decompress summary for article {article_id}: {e}")
             content = ""
             
         try:

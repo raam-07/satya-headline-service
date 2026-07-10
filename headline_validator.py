@@ -111,7 +111,7 @@ def main():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id, title, content, rephrased_title 
+            SELECT id, title, rephrased_article, rephrased_title 
             FROM articles 
             WHERE rephrased_title IS NOT NULL 
               AND rephrased_title != '' 
@@ -159,16 +159,16 @@ def main():
     for r in rows:
         article_id = r[0]
         title = r[1]
-        compressed_content = r[2]
+        compressed_summary = r[2]
         proposed_headline = r[3]
         
-        # Decompress content
+        # Decompress summary
         try:
-            content = zlib.decompress(compressed_content).decode('utf-8') if compressed_content else ""
+            content = zlib.decompress(compressed_summary).decode('utf-8') if compressed_summary else ""
         except Exception:
             content = ""
             
-        body_snippet = content[:1500]
+        body_snippet = content
         
         logging.info(f"Fact-checking ID: {article_id} | Headline: '{proposed_headline}'...")
         
