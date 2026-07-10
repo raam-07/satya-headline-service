@@ -117,7 +117,7 @@ def main():
               AND rephrased_title != '' 
               AND (headline_verified = 0 OR headline_verified IS NULL)
             ORDER BY id DESC
-            LIMIT 100
+            LIMIT 50
         """)
         rows = cursor.fetchall()
         conn.close()
