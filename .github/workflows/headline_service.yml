@@ -39,6 +39,8 @@ concurrency:
           fi
           if [ -z "$INPUT_SHARD" ] || [ "$INPUT_SHARD" = "all" ]; then
             echo "shards=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]" >> $GITHUB_OUTPUT
+          elif [ "$INPUT_SHARD" = "validator" ]; then
+            echo "shards=[\"validator\"]" >> $GITHUB_OUTPUT
           else
             echo "shards=[$INPUT_SHARD]" >> $GITHUB_OUTPUT
           fi
@@ -57,9 +59,11 @@ concurrency:
 
     steps:
       - name: Checkout Repository
+        if: ${{ matrix.shard != 'validator' }}
         uses: actions/checkout@v4
 
       - name: Validate Database Connection
+        if: ${{ matrix.shard != 'validator' }}
         env:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
@@ -80,11 +84,13 @@ concurrency:
           echo "Database connection verified successfully!"
 
       - name: Set up Python 3.10
+        if: ${{ matrix.shard != 'validator' }}
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
       - name: Cache pip dependencies
+        if: ${{ matrix.shard != 'validator' }}
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
@@ -93,6 +99,7 @@ concurrency:
             ${{ runner.os }}-pip-headlines-
 
       - name: Install Dependencies
+        if: ${{ matrix.shard != 'validator' }}
         run: |
           python -m pip install --upgrade pip
           pip install huggingface_hub libsql
@@ -102,11 +109,12 @@ concurrency:
           fi
 
       - name: Run Tests
+        if: ${{ matrix.shard != 'validator' }}
         run: |
           pytest test_validation.py
 
       - name: Recover Sentinels
-        if: ${{ inputs.recover_sentinels == true || github.event.inputs.recover_sentinels == 'true' }}
+        if: ${{ matrix.shard != 'validator' && (inputs.recover_sentinels == true || github.event.inputs.recover_sentinels == 'true') }}
         env:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
@@ -279,8 +287,26 @@ concurrency:
           "
 
       - name: Run Headline Validator
+        id: run-validator
         env:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
         run: |
-          python headline_validator.py
+          python headline_validator.py | tee validator_output.log
+          if grep -q "has_more=true" validator_output.log; then
+            echo "has_more=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_more=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Self Trigger Next Validator Run
+        if: ${{ steps.run-validator.outputs.has_more == 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "More unchecked articles remain. Self-triggering next Validator run..."
+          curl -X POST \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            https://api.github.com/repos/${{ github.repository }}/actions/workflows/headline_service.yml/dispatches \
+            -d "{\"ref\":\"${{ github.ref_name }}\", \"inputs\": {\"shard\": \"validator\"}}"

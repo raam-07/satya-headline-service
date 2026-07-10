@@ -255,6 +255,26 @@ def main():
                 logging.error(f"Failed to auto-fix article {article_id}: {e}")
                 
     logging.info(f"--- Verification Completed. Verified: {validated_count} | Auto-fixed: {fixed_count} ---")
+    
+    # Check if there are more remaining validation candidates
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT id FROM articles 
+            WHERE rephrased_title IS NOT NULL 
+              AND rephrased_title != '' 
+              AND (headline_verified = 0 OR headline_verified IS NULL)
+            LIMIT 1
+        """)
+        more = cursor.fetchone()
+        conn.close()
+        if more:
+            print("has_more=true")
+        else:
+            print("has_more=false")
+    except Exception:
+        print("has_more=false")
 
 if __name__ == '__main__':
     main()
