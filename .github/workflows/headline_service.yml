@@ -26,6 +26,7 @@ concurrency:
   group: satya-headlines-${{ github.event.inputs.shard || github.event.client_payload.shard || 'all' }}
   cancel-in-progress: false
 
+jobs:
   setup:
     runs-on: ubuntu-latest
     outputs:
