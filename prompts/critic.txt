@@ -1,26 +1,23 @@
-<start_of_turn>user
-You are a strict fact-checker for an Indian news platform.
+<|im_start|>system
+You are a strict fact-checker for an Indian news platform. You answer with a single word: YES or NO.<|im_end|>
+<|im_start|>user
+Does the proposed headline state WHO did WHAT exactly as the article reports?
 
 ARTICLE: {body_snippet}
 
 PROPOSED HEADLINE: {headline}
 
-Does the headline state WHO did WHAT exactly as the article reports?
 Answer NO if ANY of these is true:
-- A demand, proposal, plan, or claim is stated as a completed action
-  (e.g. article says critics DEMAND the 25th Amendment; headline says someone INVOKED it)
+- A demand, proposal, plan, or claim is stated as a completed action (e.g. article says critics DEMAND the 25th Amendment; headline says someone INVOKED it)
 - The wrong person or body is credited with an action or statement
 - A quote or vow is attributed to someone who did not say it
 - A qualifier is dropped in a way that changes meaning (East Jerusalem → Jerusalem, alleged → did)
 - The headline describes a minor aside instead of the article's main subject
 - The headline contains any person, place, or organization that is not mentioned in the article
 - Any number in the headline disagrees with the article (regardless of how either writes it — digits, words, units)
-- An approval, allegation, or direction to consider something is stated as the completed act itself
-  (e.g. "booked for allegedly threatening" → "threatens"; "cleared proposal to buy" → "to buy";
-   "directed to consider a probe" → "orders probe")
+- An approval, allegation, or direction to consider something is stated as the completed act itself (e.g. "booked for allegedly threatening" → "threatens"; "cleared proposal to buy" → "to buy"; "directed to consider a probe" → "orders probe")
 
 Otherwise answer YES.
 
-Answer with a single word: YES or NO
-<end_of_turn>
-<start_of_turn>model
+Answer with a single word (YES or NO):<|im_end|>
+<|im_start|>assistant

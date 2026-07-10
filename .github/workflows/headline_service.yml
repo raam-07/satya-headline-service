@@ -15,17 +15,42 @@ on:
         type: boolean
         required: false
         default: false
+      shard:
+        description: 'Shard ID to process (all, or 0-19)'
+        required: false
+        default: 'all'
   repository_dispatch:
     types: [trigger-headlines]
 
 concurrency:
-  group: satya-headlines
+  group: satya-headlines-${{ github.event.inputs.shard || github.event.client_payload.shard || 'all' }}
   cancel-in-progress: false
 
-jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.set-shards.outputs.shards }}
+    steps:
+      - id: set-shards
+        run: |
+          INPUT_SHARD="${{ github.event.inputs.shard }}"
+          if [ -z "$INPUT_SHARD" ]; then
+            INPUT_SHARD="${{ github.event.client_payload.shard }}"
+          fi
+          if [ -z "$INPUT_SHARD" ] || [ "$INPUT_SHARD" = "all" ]; then
+            echo "shards=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]" >> $GITHUB_OUTPUT
+          else
+            echo "shards=[$INPUT_SHARD]" >> $GITHUB_OUTPUT
+          fi
+
   run_headlines:
+    needs: setup
     runs-on: ubuntu-latest
     timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: ${{ fromJson(needs.setup.outputs.shards) }}
     permissions:
       actions: write
       issues: write
@@ -40,20 +65,14 @@ jobs:
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
         run: |
           echo "Testing database connection..."
-          # Strip URL manually in bash
           URL=$(echo "$SATYA_DB_URL" | xargs)
           TOKEN=$(echo "$SATYA_DB_TOKEN" | xargs)
-          
-          # Convert libsql:// to https://
           HTTP_URL="${URL/libsql:\/\//https:\/\/}"
-          
-          echo "Connecting to $HTTP_URL/v2/pipeline..."
           RESPONSE_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
             -H "Authorization: Bearer $TOKEN" \
             -H "Content-Type: application/json" \
             -d '{"requests":[{"type":"execute","stmt":{"sql":"SELECT 1"}}]}' \
             "$HTTP_URL/v2/pipeline")
-            
           if [ "$RESPONSE_CODE" -ne 200 ]; then
             echo "Database connection failed with HTTP status code $RESPONSE_CODE"
             exit 1
@@ -113,24 +132,25 @@ jobs:
           print(f'Successfully set rephrased_title to NULL for {result.get(\"affected_row_count\", 0)} blank rows.')
           "
 
-      - name: Cache Gemma Model
+      - name: Cache Qwen Model
         id: cache-model
         uses: actions/cache@v4
         with:
           path: ./models
-          key: gemma-2-9b-it-Q4_K_M-v1
+          key: qwen-2-5-14b-q5-v1
 
-      - name: Download Gemma Model
+      - name: Download Qwen Model
         if: steps.cache-model.outputs.cache-hit != 'true'
         run: |
           mkdir -p ./models
-          echo "Downloading Gemma 9B IT model via huggingface_hub..."
+          echo "Downloading Qwen 14B IT model via huggingface_hub..."
           python -c "
           from huggingface_hub import hf_hub_download
           hf_hub_download(
-            repo_id='bartowski/gemma-2-9b-it-GGUF',
-            filename='gemma-2-9b-it-Q4_K_M.gguf',
-            local_dir='./models'
+            repo_id='bartowski/Qwen2.5-14B-Instruct-GGUF',
+            filename='Qwen2.5-14B-Instruct-Q5_K_M.gguf',
+            local_dir='./models',
+            local_dir_use_symlinks=False
           )
           "
 
@@ -139,13 +159,15 @@ jobs:
         env:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
+          SHARD_ID: ${{ matrix.shard }}
+          NUM_SHARDS: 20
         run: |
           if [ "${{ inputs.test_run }}" = "true" ] || [ "${{ github.event.inputs.test_run }}" = "true" ]; then
             echo "Running in test mode..."
             python headline_pipeline.py --test-run | tee pipeline_output.log
           else
             echo "Running in production mode..."
-            python headline_pipeline.py | tee pipeline_output.log
+            python headline_pipeline.py --shard $SHARD_ID --num-shards $NUM_SHARDS | tee pipeline_output.log
           fi
           if grep -q "has_more=true" pipeline_output.log; then
             echo "has_more=true" >> $GITHUB_OUTPUT
@@ -157,13 +179,37 @@ jobs:
         if: ${{ steps.run-pipeline.outputs.has_more == 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
+          SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
+          SHARD_ID: ${{ matrix.shard }}
         run: |
-          echo "More articles remain. Self-triggering next run..."
-          curl -X POST \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            https://api.github.com/repos/${{ github.repository }}/actions/workflows/headline_service.yml/dispatches \
-            -d '{"ref":"${{ github.ref_name }}"}'
+          REMAINING=$(python -c "
+          import os, urllib.request, json, time
+          URL = os.environ['SATYA_DB_URL']
+          TOK = os.environ['SATYA_DB_TOKEN']
+          shard = int(os.environ['SHARD_ID'])
+          cutoff = int(time.time()) - 86400
+          host = URL.replace('libsql://', 'https://').rstrip('/')
+          stmt = {'sql': 'SELECT id FROM articles WHERE rephrased_title IS NULL AND scraped_at >= ? AND (id % 20) = ? LIMIT 1', 'args': [cutoff, shard]}
+          body = {'requests':[{'type':'execute','stmt':stmt},{'type':'close'}]}
+          req = urllib.request.Request(host+'/v2/pipeline', data=json.dumps(body).encode(),
+                  headers={'Authorization':f'Bearer {TOK}','Content-Type':'application/json'})
+          with urllib.request.urlopen(req, timeout=30) as r:
+              res = json.load(r)
+          rows = res['results'][0]['response']['result']['rows']
+          print(len(rows))
+          ")
+          echo "Remaining articles for shard $SHARD_ID: $REMAINING"
+          if [ "$REMAINING" -gt 0 ]; then
+            echo "More articles remain for shard $SHARD_ID. Triggering next run..."
+            curl -X POST \
+              -H "Authorization: token $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github.v3+json" \
+              https://api.github.com/repos/${{ github.repository }}/actions/workflows/headline_service.yml/dispatches \
+              -d "{\"ref\":\"${{ github.ref_name }}\", \"inputs\": {\"shard\": \"$SHARD_ID\"}}"
+          else
+            echo "All articles for shard $SHARD_ID complete."
+          fi
 
       - name: Open GitHub Issue on Failure
         if: failure()
@@ -176,3 +222,65 @@ jobs:
               title: 'Satya Headline Service Run Failed',
               body: 'The headline service GHA execution failed. Please check the logs.'
             })
+
+  run_validator:
+    needs: run_headlines
+    if: ${{ always() && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      actions: write
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-headlines-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-headlines-
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install huggingface_hub libsql
+          CMAKE_ARGS="-DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON" pip install --no-cache-dir "llama-cpp-python>=0.2.90"
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Cache Qwen Model
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: ./models
+          key: qwen-2-5-14b-q5-v1
+
+      - name: Download Qwen Model
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./models
+          echo "Downloading Qwen 14B IT model via huggingface_hub..."
+          python -c "
+          from huggingface_hub import hf_hub_download
+          hf_hub_download(
+            repo_id='bartowski/Qwen2.5-14B-Instruct-GGUF',
+            filename='Qwen2.5-14B-Instruct-Q5_K_M.gguf',
+            local_dir='./models',
+            local_dir_use_symlinks=False
+          )
+          "
+
+      - name: Run Headline Validator
+        env:
+          SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
+          SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
+        run: |
+          python headline_validator.py

@@ -1,20 +1,18 @@
-<start_of_turn>user
-You write headlines for SatyaDheesh, an Indian news platform.
+<|im_start|>system
+You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.<|im_end|>
+<|im_start|>user
 Rewrite the headline for the article below.
 
-PRIORITY: accuracy above everything. Stay close to the article's own words —
-prefer its exact phrases over your own. State only the main fact, plainly.
+PRIORITY: accuracy above everything. Stay close to the article's own words — prefer its exact phrases over your own. State only the main fact, plainly.
 
 RULES:
 1. ONE headline, max 14 words. No quotes wrapping the whole line.
-2. Every name and number exactly as the article writes them — never convert,
-   round, or spell them out.
+2. Every name and number exactly as the article writes them — never convert, round, or spell them out.
 3. Claims stay claims: a vow, demand, or plan is never stated as a completed action.
 4. No information that is not in the article.
 
 ORIGINAL TITLE: {title}
 ARTICLE: {body_snippet}
 
-HEADLINE:
-<end_of_turn>
-<start_of_turn>model
+HEADLINE:<|im_end|>
+<|im_start|>assistant

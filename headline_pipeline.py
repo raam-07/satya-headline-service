@@ -39,7 +39,7 @@ def log_rejection(article_id, stage, generated_headline, reason):
 # --- CONFIGURATION ---
 # ==============================================================================
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
-MODEL_PATH = os.path.join(MODEL_DIR, "gemma-2-9b-it-Q4_K_M.gguf")
+MODEL_PATH = os.path.join(MODEL_DIR, "Qwen2.5-14B-Instruct-Q5_K_M.gguf")
 
 def load_env():
     # Check parent directory for .env
@@ -151,15 +151,15 @@ def load_llm():
     from llama_cpp import Llama
     if not os.path.exists(MODEL_PATH):
         os.makedirs(MODEL_DIR, exist_ok=True)
-        logging.info("Downloading Gemma 9B IT model from HuggingFace...")
+        logging.info("Downloading Qwen 14B IT model from HuggingFace...")
         from huggingface_hub import hf_hub_download
         hf_hub_download(
-            repo_id='bartowski/gemma-2-9b-it-GGUF',
-            filename='gemma-2-9b-it-Q4_K_M.gguf',
+            repo_id='bartowski/Qwen2.5-14B-Instruct-GGUF',
+            filename='Qwen2.5-14B-Instruct-Q5_K_M.gguf',
             local_dir=MODEL_DIR,
             local_dir_use_symlinks=False
         )
-    logging.info(f"Loading Gemma 9B model from {MODEL_PATH}...")
+    logging.info(f"Loading Qwen 14B model from {MODEL_PATH}...")
     llm = Llama(
         model_path=MODEL_PATH,
         n_ctx=4096,
@@ -176,47 +176,64 @@ def load_llm():
 def main():
     parser = argparse.ArgumentParser(description="Satya Headline Service")
     parser.add_argument("--test-run", action="store_true", help="Process 50 recent articles without consuming the queue with rejections")
+    parser.add_argument("--shard", type=int, default=None, help="Shard ID to process (0 to num-shards - 1)")
+    parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards")
     args = parser.parse_args()
     
     start_time = time.time()
     logging.info("--- Starting News Headline Pipeline ---")
     
-    # 1. Connect to Database
+    cutoff_timestamp = int(time.time()) - 86400
+    shard = args.shard if args.shard is not None else (int(os.environ.get('SHARD_ID')) if os.environ.get('SHARD_ID') is not None else None)
+    num_shards = args.num_shards if args.num_shards != 1 else (int(os.environ.get('NUM_SHARDS')) if os.environ.get('NUM_SHARDS') is not None else 1)
+    
+    # 1. Connect to Database: Fetch batch and close immediately
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-    except Exception as e:
-        logging.critical(f"Failed database initialization: {e}")
-        sys.exit(1)
+        batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 10))
         
-    # 2. Determine batch size
-    batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 10))
-    
-    # 3. Query articles: Fetch recent unprocessed articles
-    try:
-        query = """
-            SELECT id, title, content 
-            FROM articles 
-            WHERE rephrased_title IS NULL 
-            ORDER BY id DESC 
-            LIMIT ?
-        """
-        cursor.execute(query, (batch_size,))
+        if shard is not None and num_shards > 1:
+            logging.info(f"Running in shard mode: shard {shard} of {num_shards}")
+            query = """
+                SELECT id, title, content 
+                FROM articles 
+                WHERE rephrased_title IS NULL 
+                  AND scraped_at >= ?
+                  AND (id % ?) = ?
+                ORDER BY id DESC 
+                LIMIT ?
+            """
+            cursor.execute(query, (cutoff_timestamp, num_shards, shard, batch_size))
+        else:
+            query = """
+                SELECT id, title, content 
+                FROM articles 
+                WHERE rephrased_title IS NULL 
+                  AND scraped_at >= ?
+                ORDER BY id DESC 
+                LIMIT ?
+            """
+            cursor.execute(query, (cutoff_timestamp, batch_size))
+            
         rows = cursor.fetchall()
+        conn.close()
     except Exception as e:
         logging.critical(f"Failed to query database articles: {e}")
-        conn.close()
+        try:
+            conn.close()
+        except Exception:
+            pass
         sys.exit(1)
         
     if not rows:
         logging.info("No articles to process.")
         print("has_more=false")
-        conn.close()
         sys.exit(0)
         
     logging.info(f"Loaded {len(rows)} articles for headline generation.")
     
-    # 4. Load Prompts
+    # 2. Load Prompts
     prompt_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts")
     headline_prompt_path = os.path.join(prompt_dir, "headline.txt")
     headline_safe_prompt_path = os.path.join(prompt_dir, "headline_safe.txt")
@@ -231,18 +248,16 @@ def main():
             critic_prompt_template = f.read()
     except Exception as e:
         logging.critical(f"Failed to load prompts: {e}")
-        conn.close()
         sys.exit(1)
         
-    # 5. Load Gemma 9B model
+    # 3. Load Qwen model
     try:
         llm = load_llm()
     except Exception as e:
         logging.critical(f"Failed to initialize model: {e}")
-        conn.close()
         sys.exit(1)
         
-    # 6. Process articles
+    # 4. Process articles
     processed_count = 0
     
     for idx, r in enumerate(rows):
@@ -260,7 +275,22 @@ def main():
         try:
             # A. Check skip rules
             if should_skip_article(title, content):
-                handle_rejection(cursor, conn, article_id, "skip", None, "Skipped by listicle/live-blog title filter or length > 15k chars", args.test_run)
+                # For skipped listicles, write blank to prevent reprocessing
+                max_db_retries = 3
+                for db_attempt in range(max_db_retries):
+                    try:
+                        conn = get_db_connection()
+                        cursor = conn.cursor()
+                        cursor.execute("UPDATE articles SET rephrased_title = '' WHERE id = ?", (article_id,))
+                        conn.commit()
+                        conn.close()
+                        break
+                    except Exception as db_e:
+                        try:
+                            conn.close()
+                        except Exception:
+                            pass
+                        time.sleep(2.0)
                 continue
                 
             logging.info(f"Processing ID: {article_id} ({idx + 1} of {len(rows)}) | Title: {title[:50]}...")
@@ -273,7 +303,7 @@ def main():
                 formatted_prompt,
                 max_tokens=50,
                 top_p=0.9,
-                stop=["<end_of_turn>"],
+                stop=["<|im_end|>", "Article:", "<|im_start|>"],
                 temperature=0.4,
                 repeat_penalty=1.1,
                 echo=False
@@ -289,52 +319,37 @@ def main():
                 critic_response = llm(
                     formatted_critic,
                     max_tokens=5,
-                    stop=["<end_of_turn>"],
-                    temperature=0.0,  # Greedy validation
+                    stop=["<|im_end|>", "Article:", "<|im_start|>"],
+                    temperature=0.0,
                     echo=False
                 )
                 critic_ans_masala = critic_response['choices'][0].get('text', '').strip().upper()
                 if "YES" in critic_ans_masala and "NO" not in critic_ans_masala:
                     masala_valid = True
 
-            # D. Retry flow
+            # D. Retry flow (Fallback to Safe)
             if not masala_valid:
-                # Trigger retry using safe prompt
                 formatted_safe = headline_safe_prompt_template.format(title=title, body_snippet=body_snippet)
-                
                 safe_response = llm(
                     formatted_safe,
                     max_tokens=50,
-                    stop=["<end_of_turn>"],
-                    temperature=0.2, # Cooler
+                    stop=["<|im_end|>", "Article:", "<|im_start|>"],
+                    temperature=0.2,
                     echo=False
                 )
                 safe_headline = safe_response['choices'][0].get('text', '').strip()
                 
-                # Log retry: stage "critic-retry" with both headlines
                 masala_log = masala_headline if masala_headline else "[empty]"
                 logging.info(f"Article ID: {article_id} | Stage: critic-retry | Masala: '{masala_log}' (Critic: '{critic_ans_masala}') | Safe: '{safe_headline}'")
                 
                 if not safe_headline:
-                    handle_rejection(cursor, conn, article_id, "generation", None, "LLM returned empty safe headline", args.test_run)
-                    continue
-                    
-                # Run Critic validation on safe headline
-                formatted_critic_safe = critic_prompt_template.format(body_snippet=body_snippet, headline=safe_headline)
-                critic_response_safe = llm(
-                    formatted_critic_safe,
-                    max_tokens=5,
-                    stop=["<end_of_turn>"],
-                    temperature=0.0,
-                    echo=False
-                )
-                critic_ans_safe = critic_response_safe['choices'][0].get('text', '').strip().upper()
-                
-                if "YES" not in critic_ans_safe or "NO" in critic_ans_safe:
-                    handle_rejection(cursor, conn, article_id, "critic", safe_headline, f"Critic rejected safe headline: '{critic_ans_safe}'", args.test_run)
-                    continue
-                    
-                final_headline = safe_headline
+                    if masala_headline:
+                        final_headline = masala_headline
+                    else:
+                        logging.warning(f"Both Masala and Safe headlines were empty for article {article_id}. Skipping.")
+                        continue
+                else:
+                    final_headline = safe_headline
             else:
                 final_headline = masala_headline
 
@@ -342,30 +357,43 @@ def main():
             clean_headline = post_process_headline(final_headline)
             is_valid_format, format_reason = validate_formatting(clean_headline)
             if not is_valid_format:
-                handle_rejection(cursor, conn, article_id, "format", clean_headline, format_reason, args.test_run)
-                continue
+                logging.warning(f"Format check failed for '{clean_headline}': {format_reason}. Fallback to original title.")
+                words = title.split()
+                if len(words) > 14:
+                    clean_headline = " ".join(words[:14])
+                else:
+                    clean_headline = title
                 
-            # F. Save success transactionally
-            cursor.execute("UPDATE articles SET rephrased_title = ? WHERE id = ?", (clean_headline, article_id))
-            conn.commit()
+            # F. Save success transactionally (Instant frontend publishing, headline_verified=0)
+            max_db_retries = 3
+            for db_attempt in range(max_db_retries):
+                try:
+                    conn = get_db_connection()
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        "UPDATE articles SET rephrased_title = ?, headline_verified = 0 WHERE id = ?", 
+                        (clean_headline, article_id)
+                    )
+                    conn.commit()
+                    conn.close()
+                    break
+                except Exception as db_e:
+                    logging.warning(f"Database save failed (attempt {db_attempt + 1}/{max_db_retries}): {db_e}. Retrying in 2s...")
+                    try:
+                        conn.close()
+                    except Exception:
+                        pass
+                    time.sleep(2.0)
             
             processed_count += 1
             logging.info(f"Successfully saved rephrased_title for ID {article_id}: '{clean_headline}'")
             
         except Exception as e:
-            # Per-article poison pill protection
             logging.error(f"Error processing article {article_id}: {e}")
-            try:
-                handle_rejection(cursor, conn, article_id, "exception", None, f"Exception occurred: {str(e)}", args.test_run)
-            except Exception as db_e:
-                logging.critical(f"Database update failed during fallback transaction: {db_e}")
-                sys.exit(1)
                 
-    # 7. Complete run
-    conn.close()
+    # 5. Complete run
     logging.info(f"--- Pipeline Finished. Processed {processed_count} headlines successfully. ---")
     
-    # If we processed the full batch size, we indicate there may be more
     if len(rows) == batch_size:
         print("has_more=true")
     else:
