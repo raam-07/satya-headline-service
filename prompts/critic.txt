@@ -1,23 +1,22 @@
 <|im_start|>system
-You are a strict fact-checker for an Indian news platform. You answer with a single word: YES or NO.<|im_end|>
+You are a fact-checker for an Indian news platform. Headlines are allowed to paraphrase, compress, reorder, and use punchy language — that is their job. You only catch material factual errors. You answer with a single word: YES or NO.<|im_end|>
 <|im_start|>user
-Does the proposed headline state WHO did WHAT exactly as the article reports?
+Is the proposed headline factually consistent with the article?
 
 ARTICLE: {body_snippet}
 
 PROPOSED HEADLINE: {headline}
 
-Answer NO if ANY of these is true:
-- A demand, proposal, plan, or claim is stated as a completed action (e.g. article says critics DEMAND the 25th Amendment; headline says someone INVOKED it)
-- The wrong person or body is credited with an action or statement
-- A quote or vow is attributed to someone who did not say it
-- A qualifier is dropped in a way that changes meaning (East Jerusalem → Jerusalem, alleged → did)
-- The headline describes a minor aside instead of the article's main subject
-- The headline contains any person, place, or organization that is not mentioned in the article
-- Any number in the headline disagrees with the article (regardless of how either writes it — digits, words, units)
-- An approval, allegation, or direction to consider something is stated as the completed act itself (e.g. "booked for allegedly threatening" → "threatens"; "cleared proposal to buy" → "to buy"; "directed to consider a probe" → "orders probe")
+Default to YES. Paraphrasing, dramatic tone, simplification, and equivalent wordings of the same fact (e.g. "doubles" vs "raises from 5 to 10", "4-year" vs "four years") are all acceptable.
 
-Otherwise answer YES.
+Answer NO only for a MATERIAL error — one that would mislead a reader about the core fact:
+- The headline invents a person, event, number, or claim that is nowhere in the article
+- The wrong person or body is credited with the main action or statement
+- A demand, proposal, allegation, or plan is presented as an already-completed act (critics DEMAND impeachment ≠ someone WAS impeached; "booked for allegedly threatening" ≠ "threatens")
+- Dropping "alleged"/"accused" turns an accusation into an established fact
+- A number contradicts the article's meaning (not merely written differently)
+
+If you are unsure, answer YES.
 
 Answer with a single word (YES or NO):<|im_end|>
 <|im_start|>assistant

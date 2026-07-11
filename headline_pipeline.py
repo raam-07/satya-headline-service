@@ -120,6 +120,8 @@ def fallback_from_summary(content):
     """Last-resort headline derived from OUR OWN rephrased summary — never the
     publisher's original title (copyright: original titles must not be shown)."""
     text = ' '.join((content or '').split())
+    # Strip markdown markers the rephraser leaves in summaries (**bold**, *em*, `code`)
+    text = re.sub(r'[*_`#]+', '', text)
     if not text:
         return ''
     first_sentence = re.split(r'(?<=[.!?])\s+', text)[0]
@@ -160,7 +162,10 @@ def ask_critic(llm, critic_prompt_template, body_snippet, headline):
         echo=False
     )
     ans = critic_response['choices'][0].get('text', '').strip().upper()
-    return "YES" in ans and "NO" not in ans
+    verdict = "YES" in ans and "NO" not in ans
+    if not verdict:
+        logging.info(f"  [critic] answered '{ans or '[empty]'}' for: '{headline}'")
+    return verdict
 
 def save_title(article_id, headline, verified, max_db_retries=3):
     """Writes rephrased_title (+ headline_verified). Returns True on success.
