@@ -1,7 +1,7 @@
 <|im_start|>system
 You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.<|im_end|>
 <|im_start|>user
-Rewrite the headline for the article below.
+Write a headline for the article below, using ONLY the article text.
 
 PRIORITY: accuracy above everything. Stay close to the article's own words — prefer its exact phrases over your own. State only the main fact, plainly.
 
@@ -11,7 +11,6 @@ RULES:
 3. Claims stay claims: a vow, demand, or plan is never stated as a completed action.
 4. No information that is not in the article.
 
-ORIGINAL TITLE: {title}
 ARTICLE: {body_snippet}
 
 HEADLINE:<|im_end|>

@@ -116,6 +116,17 @@ def validate_formatting(headline):
         return False, "contains non-Latin script characters"
     return True, None
 
+def fallback_from_summary(content):
+    """Last-resort headline derived from OUR OWN rephrased summary — never the
+    publisher's original title (copyright: original titles must not be shown)."""
+    text = ' '.join((content or '').split())
+    if not text:
+        return ''
+    first_sentence = re.split(r'(?<=[.!?])\s+', text)[0]
+    words = first_sentence.split()[:12]
+    headline = ' '.join(words).rstrip('.,;:')
+    return post_process_headline(headline) if headline else ''
+
 def post_process_headline(headline):
     headline = headline.strip()
     # Strip wrapping quotes and asterisks
@@ -320,18 +331,13 @@ def main():
             content = ""
             
         try:
-            # A. Check skip rules
-            if should_skip_article(title, content):
-                # For skipped listicles, write blank to prevent reprocessing
-                if not save_title(article_id, '', 1):
-                    db_failure_count += 1
-                continue
-                
             logging.info(f"Processing ID: {article_id} ({idx + 1} of {len(rows)}) | Title: {title[:50]}...")
-            
-            # B. Generate Headline (Masala)
+
+            # B. Generate Headline (Masala) — from OUR rephrased summary only.
+            # (No skip rules: every article must get a rephrased headline so the
+            # publisher's original title is never displayed.)
             body_snippet = content[:1500]
-            formatted_prompt = headline_prompt_template.format(title=title, body_snippet=body_snippet)
+            formatted_prompt = headline_prompt_template.format(body_snippet=body_snippet)
             
             response = llm(
                 formatted_prompt,
@@ -351,13 +357,13 @@ def main():
 
             # D. Retry flow (Fallback to Safe — safe must ALSO pass the critic).
             # A headline the critic rejected is never saved. If everything
-            # fails, save '' so the frontend falls back to the original title
-            # and the article is not re-fetched forever.
+            # fails, fall back to the first words of OUR OWN summary — the
+            # publisher's original title is never used.
             final_headline = None
             if masala_valid:
                 final_headline = masala_headline
             else:
-                formatted_safe = headline_safe_prompt_template.format(title=title, body_snippet=body_snippet)
+                formatted_safe = headline_safe_prompt_template.format(body_snippet=body_snippet)
                 safe_response = llm(
                     formatted_safe,
                     max_tokens=50,
@@ -374,18 +380,20 @@ def main():
                     final_headline = safe_headline
 
             if final_headline is None:
-                logging.warning(f"No headline passed the critic for article {article_id}. Saving blank (frontend falls back to original title).")
-                if not save_title(article_id, '', 1):
+                summary_fallback = fallback_from_summary(content)
+                logging.warning(f"No headline passed the critic for article {article_id}. Falling back to summary lead: '{summary_fallback}'")
+                if not save_title(article_id, summary_fallback, 1):
                     db_failure_count += 1
                 continue
 
             # E. Clean & Mechanical formatting — a format failure also falls
-            # back to blank rather than a mid-sentence truncated title.
+            # back to the summary lead, never the original title.
             clean_headline = post_process_headline(final_headline)
             is_valid_format, format_reason = validate_formatting(clean_headline)
             if not is_valid_format:
-                logging.warning(f"Format check failed for '{clean_headline}': {format_reason}. Saving blank fallback.")
-                if not save_title(article_id, '', 1):
+                summary_fallback = fallback_from_summary(content)
+                logging.warning(f"Format check failed for '{clean_headline}': {format_reason}. Falling back to summary lead: '{summary_fallback}'")
+                if not save_title(article_id, summary_fallback, 1):
                     db_failure_count += 1
                 continue
 

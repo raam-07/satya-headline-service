@@ -62,7 +62,7 @@ def get_db_connection():
     return sqlite3.connect(DB_PATH)
 
 # Single source of truth — the pipeline's validators (avoids the two copies drifting)
-from headline_pipeline import validate_formatting, post_process_headline, ask_critic, save_title
+from headline_pipeline import validate_formatting, post_process_headline, ask_critic, save_title, fallback_from_summary
 
 # ==============================================================================
 # --- AI INFERENCE SETUP ---
@@ -177,7 +177,7 @@ def main():
             # the frontend falls back to the original title.
             logging.warning(f"  ✗ HALLUCINATION DETECTED. Triggering Auto-Fixer...")
             try:
-                formatted_safe = headline_safe_prompt_template.format(title=title, body_snippet=body_snippet)
+                formatted_safe = headline_safe_prompt_template.format(body_snippet=body_snippet)
                 safe_response = llm(
                     formatted_safe,
                     max_tokens=50,
@@ -202,8 +202,9 @@ def main():
                     else:
                         db_failure_count += 1
                 else:
-                    logging.warning(f"  → Fix rejected too. Blanking headline (frontend falls back to original title).")
-                    if save_title(article_id, '', 1):
+                    summary_fallback = fallback_from_summary(content)
+                    logging.warning(f"  → Fix rejected too. Falling back to summary lead: '{summary_fallback}'")
+                    if save_title(article_id, summary_fallback, 1):
                         fixed_count += 1
                     else:
                         db_failure_count += 1
