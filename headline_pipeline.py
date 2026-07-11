@@ -110,6 +110,10 @@ def validate_formatting(headline):
         return False, "too short"
     if len(words) > 14:
         return False, f"length {len(words)} exceeds 14 words"
+    # Language guard: reject non-Latin script output (e.g. Qwen slipping into
+    # Chinese/Devanagari). Latin letters incl. accents sit below U+024F.
+    if any(ch.isalpha() and ord(ch) > 0x024F for ch in cleaned):
+        return False, "contains non-Latin script characters"
     return True, None
 
 def post_process_headline(headline):
@@ -130,6 +134,46 @@ def post_process_headline(headline):
         words[0] = first_word[0].upper() + first_word[1:]
         headline = " ".join(words)
     return headline
+
+# ==============================================================================
+# --- SHARED LLM / DB HELPERS ---
+# ==============================================================================
+def ask_critic(llm, critic_prompt_template, body_snippet, headline):
+    """Returns True only if the critic explicitly answers YES."""
+    formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=headline)
+    critic_response = llm(
+        formatted_critic,
+        max_tokens=5,
+        stop=["<|im_end|>", "Article:", "<|im_start|>"],
+        temperature=0.0,
+        echo=False
+    )
+    ans = critic_response['choices'][0].get('text', '').strip().upper()
+    return "YES" in ans and "NO" not in ans
+
+def save_title(article_id, headline, verified, max_db_retries=3):
+    """Writes rephrased_title (+ headline_verified). Returns True on success.
+    Callers MUST NOT count the row as processed when this returns False."""
+    for db_attempt in range(max_db_retries):
+        try:
+            conn = get_db_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE articles SET rephrased_title = ?, headline_verified = ? WHERE id = ?",
+                (headline, verified, article_id)
+            )
+            conn.commit()
+            conn.close()
+            return True
+        except Exception as db_e:
+            logging.warning(f"DB save failed for article {article_id} (attempt {db_attempt + 1}/{max_db_retries}): {db_e}")
+            try:
+                conn.close()
+            except Exception:
+                pass
+            time.sleep(2.0)
+    logging.error(f"DB save PERMANENTLY failed for article {article_id} after {max_db_retries} attempts.")
+    return False
 
 # ==============================================================================
 # --- REJECTION & ERROR HANDLERS ---
@@ -261,7 +305,8 @@ def main():
         
     # 4. Process articles
     processed_count = 0
-    
+    db_failure_count = 0
+
     for idx, r in enumerate(rows):
         article_id = r[0]
         title = r[1]
@@ -278,21 +323,8 @@ def main():
             # A. Check skip rules
             if should_skip_article(title, content):
                 # For skipped listicles, write blank to prevent reprocessing
-                max_db_retries = 3
-                for db_attempt in range(max_db_retries):
-                    try:
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute("UPDATE articles SET rephrased_title = '' WHERE id = ?", (article_id,))
-                        conn.commit()
-                        conn.close()
-                        break
-                    except Exception as db_e:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-                        time.sleep(2.0)
+                if not save_title(article_id, '', 1):
+                    db_failure_count += 1
                 continue
                 
             logging.info(f"Processing ID: {article_id} ({idx + 1} of {len(rows)}) | Title: {title[:50]}...")
@@ -313,24 +345,18 @@ def main():
             masala_headline = response['choices'][0].get('text', '').strip()
             
             # C. Check masala headline and ask critic
-            critic_ans_masala = ""
             masala_valid = False
-            
             if masala_headline:
-                formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=masala_headline)
-                critic_response = llm(
-                    formatted_critic,
-                    max_tokens=5,
-                    stop=["<|im_end|>", "Article:", "<|im_start|>"],
-                    temperature=0.0,
-                    echo=False
-                )
-                critic_ans_masala = critic_response['choices'][0].get('text', '').strip().upper()
-                if "YES" in critic_ans_masala and "NO" not in critic_ans_masala:
-                    masala_valid = True
+                masala_valid = ask_critic(llm, critic_prompt_template, body_snippet, masala_headline)
 
-            # D. Retry flow (Fallback to Safe)
-            if not masala_valid:
+            # D. Retry flow (Fallback to Safe — safe must ALSO pass the critic).
+            # A headline the critic rejected is never saved. If everything
+            # fails, save '' so the frontend falls back to the original title
+            # and the article is not re-fetched forever.
+            final_headline = None
+            if masala_valid:
+                final_headline = masala_headline
+            else:
                 formatted_safe = headline_safe_prompt_template.format(title=title, body_snippet=body_snippet)
                 safe_response = llm(
                     formatted_safe,
@@ -340,62 +366,47 @@ def main():
                     echo=False
                 )
                 safe_headline = safe_response['choices'][0].get('text', '').strip()
-                
-                masala_log = masala_headline if masala_headline else "[empty]"
-                logging.info(f"Article ID: {article_id} | Stage: critic-retry | Masala: '{masala_log}' (Critic: '{critic_ans_masala}') | Safe: '{safe_headline}'")
-                
-                if not safe_headline:
-                    if masala_headline:
-                        final_headline = masala_headline
-                    else:
-                        logging.warning(f"Both Masala and Safe headlines were empty for article {article_id}. Skipping.")
-                        continue
-                else:
-                    final_headline = safe_headline
-            else:
-                final_headline = masala_headline
 
-            # E. Clean & Mechanical formatting
+                masala_log = masala_headline if masala_headline else "[empty]"
+                logging.info(f"Article ID: {article_id} | Stage: critic-retry | Masala: '{masala_log}' | Safe: '{safe_headline}'")
+
+                if safe_headline and ask_critic(llm, critic_prompt_template, body_snippet, safe_headline):
+                    final_headline = safe_headline
+
+            if final_headline is None:
+                logging.warning(f"No headline passed the critic for article {article_id}. Saving blank (frontend falls back to original title).")
+                if not save_title(article_id, '', 1):
+                    db_failure_count += 1
+                continue
+
+            # E. Clean & Mechanical formatting — a format failure also falls
+            # back to blank rather than a mid-sentence truncated title.
             clean_headline = post_process_headline(final_headline)
             is_valid_format, format_reason = validate_formatting(clean_headline)
             if not is_valid_format:
-                logging.warning(f"Format check failed for '{clean_headline}': {format_reason}. Fallback to original title.")
-                words = title.split()
-                if len(words) > 14:
-                    clean_headline = " ".join(words[:14])
-                else:
-                    clean_headline = title
-                
+                logging.warning(f"Format check failed for '{clean_headline}': {format_reason}. Saving blank fallback.")
+                if not save_title(article_id, '', 1):
+                    db_failure_count += 1
+                continue
+
             # F. Save success transactionally (Instant frontend publishing, headline_verified=0)
-            max_db_retries = 3
-            for db_attempt in range(max_db_retries):
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "UPDATE articles SET rephrased_title = ?, headline_verified = 0 WHERE id = ?", 
-                        (clean_headline, article_id)
-                    )
-                    conn.commit()
-                    conn.close()
-                    break
-                except Exception as db_e:
-                    logging.warning(f"Database save failed (attempt {db_attempt + 1}/{max_db_retries}): {db_e}. Retrying in 2s...")
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
-                    time.sleep(2.0)
-            
-            processed_count += 1
-            logging.info(f"Successfully saved rephrased_title for ID {article_id}: '{clean_headline}'")
+            if save_title(article_id, clean_headline, 0):
+                processed_count += 1
+                logging.info(f"Successfully saved rephrased_title for ID {article_id}: '{clean_headline}'")
+            else:
+                db_failure_count += 1
             
         except Exception as e:
             logging.error(f"Error processing article {article_id}: {e}")
                 
     # 5. Complete run
     logging.info(f"--- Pipeline Finished. Processed {processed_count} headlines successfully. ---")
-    
+
+    if db_failure_count > 0:
+        logging.critical(f"{db_failure_count} article(s) could not be written to the DB. Failing the run.")
+        print("has_more=false")
+        sys.exit(1)
+
     if len(rows) == batch_size:
         print("has_more=true")
     else:

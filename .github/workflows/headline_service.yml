@@ -142,6 +142,7 @@ jobs:
           "
 
       - name: Cache Qwen Model
+        if: ${{ matrix.shard != 'validator' }}
         id: cache-model
         uses: actions/cache@v4
         with:
@@ -149,7 +150,7 @@ jobs:
           key: qwen-2-5-14b-q5-v1
 
       - name: Download Qwen Model
-        if: steps.cache-model.outputs.cache-hit != 'true'
+        if: ${{ matrix.shard != 'validator' && steps.cache-model.outputs.cache-hit != 'true' }}
         run: |
           mkdir -p ./models
           echo "Downloading Qwen 14B IT model via huggingface_hub..."
@@ -164,6 +165,7 @@ jobs:
           "
 
       - name: Run Headline Pipeline
+        if: ${{ matrix.shard != 'validator' }}
         id: run-pipeline
         env:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
@@ -185,7 +187,7 @@ jobs:
           fi
 
       - name: Self Trigger Next Run
-        if: ${{ steps.run-pipeline.outputs.has_more == 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+        if: ${{ matrix.shard != 'validator' && steps.run-pipeline.outputs.has_more == 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}

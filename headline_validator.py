@@ -61,29 +61,8 @@ def get_db_connection():
             
     return sqlite3.connect(DB_PATH)
 
-def validate_formatting(headline):
-    cleaned = headline.strip()
-    words = cleaned.split()
-    if not cleaned:
-        return False
-    if len(words) < 3 or len(words) > 14:
-        return False
-    return True
-
-def post_process_headline(headline):
-    headline = headline.strip()
-    while (headline.startswith('"') and headline.endswith('"')) or \
-          (headline.startswith("'") and headline.endswith("'")) or \
-          (headline.startswith('*') and headline.endswith('*')):
-        headline = headline[1:-1].strip()
-    if headline.endswith('.'):
-        headline = headline[:-1].strip()
-    words = headline.split()
-    if words:
-        first_word = words[0]
-        words[0] = first_word[0].upper() + first_word[1:]
-        headline = " ".join(words)
-    return headline
+# Single source of truth — the pipeline's validators (avoids the two copies drifting)
+from headline_pipeline import validate_formatting, post_process_headline, ask_critic, save_title
 
 # ==============================================================================
 # --- AI INFERENCE SETUP ---
@@ -154,6 +133,8 @@ def main():
         
     validated_count = 0
     fixed_count = 0
+    db_failure_count = 0
+    llm_failure_count = 0
     
     # 4. Loop & Verify
     for r in rows:
@@ -168,49 +149,32 @@ def main():
         except Exception:
             content = ""
             
-        body_snippet = content
-        
+        # CRITICAL: truncate like the pipeline does — the full article blows
+        # past n_ctx=4096 and permanently wedges the row (infinite dispatch loop)
+        body_snippet = content[:1500]
+
         logging.info(f"Fact-checking ID: {article_id} | Headline: '{proposed_headline}'...")
-        
+
         # A. Ask Critic
-        critic_valid = False
         try:
-            formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=proposed_headline)
-            critic_response = llm(
-                formatted_critic,
-                max_tokens=5,
-                stop=["<|im_end|>", "Article:", "<|im_start|>"],
-                temperature=0.0, # Greedy
-                echo=False
-            )
-            critic_ans = critic_response['choices'][0].get('text', '').strip().upper()
-            if "YES" in critic_ans and "NO" not in critic_ans:
-                critic_valid = True
+            critic_valid = ask_critic(llm, critic_prompt_template, body_snippet, proposed_headline)
         except Exception as e:
-            logging.error(f"Error calling LLM for critic: {e}")
+            logging.error(f"Error calling LLM for critic on article {article_id}: {e}")
+            llm_failure_count += 1
             continue
-            
+
         if critic_valid:
             # Correct headline! Save verified=1
             logging.info(f"  ✓ VERIFIED CORRECT.")
-            max_db_retries = 3
-            for db_attempt in range(max_db_retries):
-                try:
-                    conn = get_db_connection()
-                    cursor = conn.cursor()
-                    cursor.execute("UPDATE articles SET headline_verified = 1 WHERE id = ?", (article_id,))
-                    conn.commit()
-                    conn.close()
-                    break
-                except Exception as db_e:
-                    try:
-                        conn.close()
-                    except Exception:
-                        pass
-                    time.sleep(2.0)
-            validated_count += 1
+            if save_title(article_id, proposed_headline, 1):
+                validated_count += 1
+            else:
+                db_failure_count += 1
         else:
-            # Incorrect headline! Generate a Safe replacement
+            # Incorrect headline! Generate a Safe replacement.
+            # The fix must itself pass the critic — never stamp an unchecked
+            # headline as verified. If everything fails, blank the headline so
+            # the frontend falls back to the original title.
             logging.warning(f"  ✗ HALLUCINATION DETECTED. Triggering Auto-Fixer...")
             try:
                 formatted_safe = headline_safe_prompt_template.format(title=title, body_snippet=body_snippet)
@@ -223,47 +187,52 @@ def main():
                 )
                 safe_headline = safe_response['choices'][0].get('text', '').strip()
                 clean_fixed = post_process_headline(safe_headline)
-                
-                # Fallback check if LLM returned empty or too short
-                if not validate_formatting(clean_fixed):
-                    words = title.split()
-                    clean_fixed = " ".join(words[:14]) if len(words) > 14 else title
-                    
-                logging.info(f"  → Fixed Headline: '{clean_fixed}'")
-                
-                # Save fixed headline & set verified=1
-                max_db_retries = 3
-                for db_attempt in range(max_db_retries):
-                    try:
-                        conn = get_db_connection()
-                        cursor = conn.cursor()
-                        cursor.execute(
-                            "UPDATE articles SET rephrased_title = ?, headline_verified = 1 WHERE id = ?",
-                            (clean_fixed, article_id)
-                        )
-                        conn.commit()
-                        conn.close()
-                        break
-                    except Exception as db_e:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-                        time.sleep(2.0)
-                fixed_count += 1
+
+                is_valid_format, _ = validate_formatting(clean_fixed)
+                fix_accepted = (
+                    is_valid_format
+                    and clean_fixed != proposed_headline  # re-saving the rejected headline is never a fix
+                    and ask_critic(llm, critic_prompt_template, body_snippet, clean_fixed)
+                )
+
+                if fix_accepted:
+                    logging.info(f"  → Fixed Headline: '{clean_fixed}'")
+                    if save_title(article_id, clean_fixed, 1):
+                        fixed_count += 1
+                    else:
+                        db_failure_count += 1
+                else:
+                    logging.warning(f"  → Fix rejected too. Blanking headline (frontend falls back to original title).")
+                    if save_title(article_id, '', 1):
+                        fixed_count += 1
+                    else:
+                        db_failure_count += 1
             except Exception as e:
                 logging.error(f"Failed to auto-fix article {article_id}: {e}")
+                llm_failure_count += 1
                 
-    logging.info(f"--- Verification Completed. Verified: {validated_count} | Auto-fixed: {fixed_count} ---")
-    
+    logging.info(f"--- Verification Completed. Verified: {validated_count} | Auto-fixed: {fixed_count} | LLM failures: {llm_failure_count} | DB failures: {db_failure_count} ---")
+
+    if db_failure_count > 0:
+        logging.critical(f"{db_failure_count} article(s) could not be written to the DB. Failing the run.")
+        print("has_more=false")
+        sys.exit(1)
+
+    # Loop guard: if this run made zero progress, re-dispatching would loop
+    # forever on the same stuck rows.
+    if validated_count + fixed_count == 0:
+        logging.warning("No progress made this run — suppressing self-dispatch to avoid an infinite loop.")
+        print("has_more=false")
+        return
+
     # Check if there are more remaining validation candidates
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id FROM articles 
-            WHERE rephrased_title IS NOT NULL 
-              AND rephrased_title != '' 
+            SELECT id FROM articles
+            WHERE rephrased_title IS NOT NULL
+              AND rephrased_title != ''
               AND (headline_verified = 0 OR headline_verified IS NULL)
             LIMIT 1
         """)
