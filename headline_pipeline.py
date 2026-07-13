@@ -261,23 +261,23 @@ def main():
             logging.info(f"Running in shard mode: shard {shard} of {num_shards}")
             query = """
                 SELECT id, title, rephrased_article 
-                FROM articles 
-                WHERE rephrased_title IS NULL 
+                FROM articles INDEXED BY idx_articles_scraped
+                WHERE scraped_at >= ?
+                  AND rephrased_title IS NULL 
                   AND rephrased_article IS NOT NULL
-                  AND scraped_at >= ?
                   AND (id % ?) = ?
-                ORDER BY id DESC 
+                ORDER BY scraped_at DESC 
                 LIMIT ?
             """
             cursor.execute(query, (cutoff_timestamp, num_shards, shard, batch_size))
         else:
             query = """
                 SELECT id, title, rephrased_article 
-                FROM articles 
-                WHERE rephrased_title IS NULL 
+                FROM articles INDEXED BY idx_articles_scraped
+                WHERE scraped_at >= ?
+                  AND rephrased_title IS NULL 
                   AND rephrased_article IS NOT NULL
-                  AND scraped_at >= ?
-                ORDER BY id DESC 
+                ORDER BY scraped_at DESC 
                 LIMIT ?
             """
             cursor.execute(query, (cutoff_timestamp, batch_size))

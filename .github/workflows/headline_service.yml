@@ -200,7 +200,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const shard = process.env.SHARD_ID;
             const cutoff = Math.floor(Date.now() / 1000) - 86400;
-            const stmt = { sql: `SELECT id FROM articles WHERE rephrased_title IS NULL AND rephrased_article IS NOT NULL AND scraped_at >= ${cutoff} AND (id % 20) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 20) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
