@@ -99,6 +99,8 @@ def main():
     num_shards = args.num_shards if args.num_shards != 1 else (int(os.environ.get('NUM_SHARDS')) if os.environ.get('NUM_SHARDS') is not None else 1)
     batch_size = args.batch_size
     
+    cutoff_timestamp = int(time.time()) - 3 * 86400 # Only validate articles from the last 72 hours
+    
     # 1. Fetch batch to validate, then close connection immediately
     try:
         conn = get_db_connection()
@@ -107,25 +109,27 @@ def main():
             logging.info(f"Running in shard mode: shard {shard} of {num_shards} with batch size {batch_size}")
             cursor.execute("""
                 SELECT id, title, rephrased_article, rephrased_title 
-                FROM articles 
-                WHERE rephrased_title IS NOT NULL 
+                FROM articles INDEXED BY idx_articles_scraped
+                WHERE scraped_at >= ?
+                  AND rephrased_title IS NOT NULL 
                   AND rephrased_title != '' 
                   AND (headline_verified = 0 OR headline_verified IS NULL)
                   AND (id % ?) = ?
-                ORDER BY id DESC
+                ORDER BY scraped_at DESC
                 LIMIT ?
-            """, (num_shards, shard, batch_size))
+            """, (cutoff_timestamp, num_shards, shard, batch_size))
         else:
             logging.info(f"Running in single-mode with batch size {batch_size}")
             cursor.execute("""
                 SELECT id, title, rephrased_article, rephrased_title 
-                FROM articles 
-                WHERE rephrased_title IS NOT NULL 
+                FROM articles INDEXED BY idx_articles_scraped
+                WHERE scraped_at >= ?
+                  AND rephrased_title IS NOT NULL 
                   AND rephrased_title != '' 
                   AND (headline_verified = 0 OR headline_verified IS NULL)
-                ORDER BY id DESC
+                ORDER BY scraped_at DESC
                 LIMIT ?
-            """, (batch_size,))
+            """, (cutoff_timestamp, batch_size))
         rows = cursor.fetchall()
         conn.close()
     except Exception as e:
@@ -259,12 +263,13 @@ def main():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT id FROM articles
-            WHERE rephrased_title IS NOT NULL
+            SELECT id FROM articles INDEXED BY idx_articles_scraped
+            WHERE scraped_at >= ?
+              AND rephrased_title IS NOT NULL
               AND rephrased_title != ''
               AND (headline_verified = 0 OR headline_verified IS NULL)
             LIMIT 1
-        """)
+        """, (cutoff_timestamp,))
         more = cursor.fetchone()
         conn.close()
         if more:
