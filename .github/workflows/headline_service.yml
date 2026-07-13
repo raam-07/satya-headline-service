@@ -31,6 +31,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       shards: ${{ steps.set-shards.outputs.shards }}
+      validator_shards: ${{ steps.set-shards.outputs.validator_shards }}
     steps:
       - id: set-shards
         run: |
@@ -40,10 +41,13 @@ jobs:
           fi
           if [ -z "$INPUT_SHARD" ] || [ "$INPUT_SHARD" = "all" ]; then
             echo "shards=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]" >> $GITHUB_OUTPUT
+            echo "validator_shards=[0,1,2,3,4,5,6,7,8,9]" >> $GITHUB_OUTPUT
           elif [ "$INPUT_SHARD" = "validator" ]; then
             echo "shards=[\"validator\"]" >> $GITHUB_OUTPUT
+            echo "validator_shards=[0,1,2,3,4,5,6,7,8,9]" >> $GITHUB_OUTPUT
           else
             echo "shards=[$INPUT_SHARD]" >> $GITHUB_OUTPUT
+            echo "validator_shards=[\"none\"]" >> $GITHUB_OUTPUT
           fi
 
   run_headlines:
@@ -235,10 +239,15 @@ jobs:
             })
 
   run_validator:
-    needs: run_headlines
-    if: ${{ always() && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+    needs: [setup, run_headlines]
+    if: ${{ always() && needs.setup.outputs.validator_shards != '["none"]' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 300
+    strategy:
+      fail-fast: false
+      max-parallel: 10
+      matrix:
+        shard: ${{ fromJson(needs.setup.outputs.validator_shards) }}
     permissions:
       actions: write
     steps:
@@ -295,7 +304,7 @@ jobs:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
         run: |
-          python headline_validator.py | tee validator_output.log
+          python headline_validator.py --shard ${{ matrix.shard }} --num-shards 10 | tee validator_output.log
           if grep -q "has_more=true" validator_output.log; then
             echo "has_more=true" >> $GITHUB_OUTPUT
           else
@@ -303,7 +312,7 @@ jobs:
           fi
 
       - name: Self Trigger Next Validator Run
-        if: ${{ steps.run-validator.outputs.has_more == 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+        if: ${{ matrix.shard == 0 && steps.run-validator.outputs.has_more == 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -315,7 +324,7 @@ jobs:
             -d "{\"ref\":\"${{ github.ref_name }}\", \"inputs\": {\"shard\": \"validator\"}}"
 
       - name: Trigger Classifier Workflow
-        if: ${{ steps.run-validator.outputs.has_more != 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+        if: ${{ matrix.shard == 0 && steps.run-validator.outputs.has_more != 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.TRIGGER_CLASSIFIER_TOKEN }}

@@ -86,22 +86,46 @@ def load_llm():
     return llm
 
 def main():
+    parser = argparse.ArgumentParser(description="Satya Headline Validator")
+    parser.add_argument("--batch-size", type=int, default=20, help="Maximum number of articles to validate in one run")
+    parser.add_argument("--shard", type=int, default=None, help="Shard ID to process (0 to num-shards - 1)")
+    parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards")
+    args = parser.parse_args()
+
     start_time = time.time()
     logging.info("--- Starting Headline Validation & Auto-Fixing Run ---")
+    
+    shard = args.shard if args.shard is not None else (int(os.environ.get('SHARD_ID')) if os.environ.get('SHARD_ID') is not None else None)
+    num_shards = args.num_shards if args.num_shards != 1 else (int(os.environ.get('NUM_SHARDS')) if os.environ.get('NUM_SHARDS') is not None else 1)
+    batch_size = args.batch_size
     
     # 1. Fetch batch to validate, then close connection immediately
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("""
-            SELECT id, title, rephrased_article, rephrased_title 
-            FROM articles 
-            WHERE rephrased_title IS NOT NULL 
-              AND rephrased_title != '' 
-              AND (headline_verified = 0 OR headline_verified IS NULL)
-            ORDER BY id DESC
-            LIMIT 50
-        """)
+        if shard is not None and num_shards > 1:
+            logging.info(f"Running in shard mode: shard {shard} of {num_shards} with batch size {batch_size}")
+            cursor.execute("""
+                SELECT id, title, rephrased_article, rephrased_title 
+                FROM articles 
+                WHERE rephrased_title IS NOT NULL 
+                  AND rephrased_title != '' 
+                  AND (headline_verified = 0 OR headline_verified IS NULL)
+                  AND (id % ?) = ?
+                ORDER BY id DESC
+                LIMIT ?
+            """, (num_shards, shard, batch_size))
+        else:
+            logging.info(f"Running in single-mode with batch size {batch_size}")
+            cursor.execute("""
+                SELECT id, title, rephrased_article, rephrased_title 
+                FROM articles 
+                WHERE rephrased_title IS NOT NULL 
+                  AND rephrased_title != '' 
+                  AND (headline_verified = 0 OR headline_verified IS NULL)
+                ORDER BY id DESC
+                LIMIT ?
+            """, (batch_size,))
         rows = cursor.fetchall()
         conn.close()
     except Exception as e:
@@ -230,7 +254,7 @@ def main():
         print("has_more=false")
         return
 
-    # Check if there are more remaining validation candidates
+    # Check if there are more remaining validation candidates globally
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
