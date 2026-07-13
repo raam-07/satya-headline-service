@@ -8,6 +8,10 @@ import zlib
 import re
 import datetime
 from llama_cpp import Llama
+import socket
+
+# Prevent network calls from hanging indefinitely
+socket.setdefaulttimeout(30)
 
 # ==============================================================================
 # --- LOGGING SETUP ---

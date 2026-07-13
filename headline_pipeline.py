@@ -10,6 +10,10 @@ import string
 import datetime
 import json
 import urllib.request
+import socket
+
+# Prevent network calls from hanging indefinitely
+socket.setdefaulttimeout(30)
 
 # ==============================================================================
 # --- LOGGING SETUP ---
