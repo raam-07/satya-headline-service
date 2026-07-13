@@ -262,6 +262,15 @@ jobs:
             echo "All articles for shard $SHARD_ID complete."
           fi
 
+      - name: Trigger Classifier Workflow
+        if: ${{ matrix.shard == 0 && steps.run-pipeline.outputs.has_more != 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.TRIGGER_CLASSIFIER_TOKEN }}
+          repository: raam-07/SATYA-NEWS-CLASSIFIER
+          event-type: trigger-classifier
+          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
+
       - name: Open GitHub Issue on Failure
         if: failure()
         uses: actions/github-script@v6
@@ -358,12 +367,3 @@ jobs:
             -H "Accept: application/vnd.github.v3+json" \
             https://api.github.com/repos/${{ github.repository }}/actions/workflows/headline_service.yml/dispatches \
             -d "{\"ref\":\"${{ github.ref_name }}\", \"inputs\": {\"shard\": \"validator\"}}"
-
-      - name: Trigger Classifier Workflow
-        if: ${{ matrix.shard == 0 && steps.run-validator.outputs.has_more != 'true' && inputs.test_run != true && github.event.inputs.test_run != 'true' }}
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.TRIGGER_CLASSIFIER_TOKEN }}
-          repository: raam-07/SATYA-NEWS-CLASSIFIER
-          event-type: trigger-classifier
-          client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
