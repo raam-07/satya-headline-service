@@ -32,22 +32,58 @@ jobs:
     outputs:
       shards: ${{ steps.set-shards.outputs.shards }}
       validator_shards: ${{ steps.set-shards.outputs.validator_shards }}
+      num_validator_shards: ${{ steps.set-shards.outputs.num_validator_shards }}
     steps:
       - id: set-shards
+        env:
+          SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
+          SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
         run: |
           INPUT_SHARD="${{ github.event.inputs.shard }}"
           if [ -z "$INPUT_SHARD" ]; then
             INPUT_SHARD="${{ github.event.client_payload.shard }}"
           fi
+          
+          # Query unverified candidate count to decide matrix size
+          UNVERIFIED_COUNT=$(node -e '
+            const url = process.env.SATYA_DB_URL.trim().replace("libsql://", "https://").replace(/\/$/, "");
+            const token = process.env.SATYA_DB_TOKEN.trim();
+            const cutoff = Math.floor(Date.now() / 1000) - 3 * 86400;
+            const stmt = { sql: `SELECT COUNT(id) FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NOT NULL AND rephrased_title != "" AND (headline_verified = 0 OR headline_verified IS NULL)` };
+            fetch(url + "/v2/pipeline", {
+              method: "POST",
+              headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+              body: JSON.stringify({ requests: [ { type: "execute", stmt }, { type: "close" } ] })
+            })
+            .then(res => res.json())
+            .then(res => {
+              const count = Number(res.results[0].response.result.rows[0][0].value || 0);
+              console.log(count);
+            })
+            .catch(() => console.log(0));
+          ')
+          echo "Unverified articles count: $UNVERIFIED_COUNT"
+          
+          if [ "$UNVERIFIED_COUNT" -gt 200 ]; then
+            VAL_SHARDS="[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]"
+            VAL_NUM=20
+          else
+            VAL_SHARDS="[0,1,2,3,4,5,6,7,8,9]"
+            VAL_NUM=10
+          fi
+
           if [ -z "$INPUT_SHARD" ] || [ "$INPUT_SHARD" = "all" ]; then
             echo "shards=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]" >> $GITHUB_OUTPUT
-            echo "validator_shards=[0,1,2,3,4,5,6,7,8,9]" >> $GITHUB_OUTPUT
+            echo "validator_shards=$VAL_SHARDS" >> $GITHUB_OUTPUT
+            echo "num_validator_shards=$VAL_NUM" >> $GITHUB_OUTPUT
           elif [ "$INPUT_SHARD" = "validator" ]; then
             echo "shards=[\"validator\"]" >> $GITHUB_OUTPUT
-            echo "validator_shards=[0,1,2,3,4,5,6,7,8,9]" >> $GITHUB_OUTPUT
+            echo "validator_shards=$VAL_SHARDS" >> $GITHUB_OUTPUT
+            echo "num_validator_shards=$VAL_NUM" >> $GITHUB_OUTPUT
           else
             echo "shards=[$INPUT_SHARD]" >> $GITHUB_OUTPUT
             echo "validator_shards=[\"none\"]" >> $GITHUB_OUTPUT
+            echo "num_validator_shards=0" >> $GITHUB_OUTPUT
           fi
 
   run_headlines:
@@ -245,7 +281,7 @@ jobs:
     timeout-minutes: 300
     strategy:
       fail-fast: false
-      max-parallel: 10
+      max-parallel: 20
       matrix:
         shard: ${{ fromJson(needs.setup.outputs.validator_shards) }}
     permissions:
@@ -304,7 +340,7 @@ jobs:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
         run: |
-          python headline_validator.py --shard ${{ matrix.shard }} --num-shards 10 | tee validator_output.log
+          python headline_validator.py --shard ${{ matrix.shard }} --num-shards ${{ needs.setup.outputs.num_validator_shards }} | tee validator_output.log
           if grep -q "has_more=true" validator_output.log; then
             echo "has_more=true" >> $GITHUB_OUTPUT
           else
