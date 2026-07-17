@@ -120,17 +120,50 @@ def validate_formatting(headline):
         return False, "contains non-Latin script characters"
     return True, None
 
+# Words a headline must never END on — trailing these means we cut mid-clause
+# ("...injured when a", "...agreed to hear a", "...attendant earning").
+_DANGLING = {
+    'a', 'an', 'the', 'of', 'to', 'in', 'on', 'at', 'for', 'with', 'and', 'or',
+    'but', 'as', 'by', 'when', 'while', 'after', 'before', 'that', 'which',
+    'who', 'whose', 'its', 'his', 'her', 'their', 'over', 'under', 'against',
+    'amid', 'despite', 'during', 'is', 'are', 'was', 'were', 'has', 'have',
+    'had', 'will', 'would', 'could', 'should', 'may', 'might', 'been', 'being',
+    'from', 'into', 'about', 'than', 'because', 'if', 'so', 'not', 'no',
+    # dangling adjectives/determiners ("...challenging the new", "...and other")
+    'new', 'other', 'several', 'various', 'more', 'most', 'key', 'top',
+    'major', 'latest', 'former', 'first', 'last', 'this', 'these', 'those',
+    'such', 'any', 'all', 'both', 'each', 'every', 'few', 'many', 'some',
+}
+
 def fallback_from_summary(content):
     """Last-resort headline derived from OUR OWN rephrased summary — never the
-    publisher's original title (copyright: original titles must not be shown)."""
+    publisher's original title (copyright: original titles must not be shown).
+    Cuts at a clause boundary, never mid-thought."""
     text = ' '.join((content or '').split())
     # Strip markdown markers the rephraser leaves in summaries (**bold**, *em*, `code`)
     text = re.sub(r'[*_`#]+', '', text)
     if not text:
         return ''
     first_sentence = re.split(r'(?<=[.!?])\s+', text)[0]
-    words = first_sentence.split()[:12]
-    headline = ' '.join(words).rstrip('.,;:')
+    # Summaries often open with a date clause ("On July 17, 2026, ...") that
+    # wastes headline words and reads oddly — drop it.
+    first_sentence = re.sub(
+        r'^On\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4},?\s*',
+        '', first_sentence, flags=re.IGNORECASE)
+
+    words = first_sentence.split()
+    if len(words) > 14:
+        words = words[:12]
+    # Trim back to a clause boundary: drop trailing connectives/articles/aux
+    # verbs and dangling gerunds until the headline ends on a solid word.
+    while words and (
+        words[-1].lower().strip('.,;:"\'') in _DANGLING
+        or (words[-1].lower().endswith('ing') and len(words) > 6)
+    ):
+        words.pop()
+    if len(words) < 3:
+        words = first_sentence.split()[:12]  # give up trimming, better than empty
+    headline = ' '.join(words).rstrip('.,;: ')
     return post_process_headline(headline) if headline else ''
 
 def post_process_headline(headline):
