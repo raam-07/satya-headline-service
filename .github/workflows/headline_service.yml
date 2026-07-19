@@ -100,6 +100,14 @@ jobs:
       issues: write
 
     steps:
+      - name: Free Disk Space
+        if: ${{ matrix.shard != 'validator' }}
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+
       - name: Checkout Repository
         if: ${{ matrix.shard != 'validator' }}
         uses: actions/checkout@v4
@@ -317,6 +325,13 @@ jobs:
     permissions:
       actions: write
     steps:
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+
       - name: Checkout Repository
         uses: actions/checkout@v4
 
