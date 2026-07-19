@@ -64,16 +64,16 @@ jobs:
           ')
           echo "Unverified articles count: $UNVERIFIED_COUNT"
           
-          if [ "$UNVERIFIED_COUNT" -gt 200 ]; then
-            VAL_SHARDS="[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]"
-            VAL_NUM=20
+          if [ "$UNVERIFIED_COUNT" -gt 140 ]; then
+            VAL_SHARDS="[0,1,2,3,4,5,6]"
+            VAL_NUM=7
           else
-            VAL_SHARDS="[0,1,2,3,4,5,6,7,8,9]"
-            VAL_NUM=10
+            VAL_SHARDS="[0,1,2,3]"
+            VAL_NUM=4
           fi
 
           if [ -z "$INPUT_SHARD" ] || [ "$INPUT_SHARD" = "all" ]; then
-            echo "shards=[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19]" >> $GITHUB_OUTPUT
+            echo "shards=[0,1,2,3,4,5,6]" >> $GITHUB_OUTPUT
             echo "validator_shards=$VAL_SHARDS" >> $GITHUB_OUTPUT
             echo "num_validator_shards=$VAL_NUM" >> $GITHUB_OUTPUT
           elif [ "$INPUT_SHARD" = "validator" ]; then
@@ -125,7 +125,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const shard = Number(process.env.SHARD_ID);
             const cutoff = Math.floor(Date.now() / 1000) - 86400;
-            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 20) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 7) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
@@ -250,7 +250,7 @@ jobs:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
           SHARD_ID: ${{ matrix.shard }}
-          NUM_SHARDS: 20
+          NUM_SHARDS: 7
         run: |
           if [ "${{ inputs.test_run }}" = "true" ] || [ "${{ github.event.inputs.test_run }}" = "true" ]; then
             echo "Running in test mode..."
@@ -278,7 +278,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const shard = process.env.SHARD_ID;
             const cutoff = Math.floor(Date.now() / 1000) - 86400;
-            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 20) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 7) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
