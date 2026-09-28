@@ -152,17 +152,29 @@ def fallback_from_summary(content):
         '', first_sentence, flags=re.IGNORECASE)
 
     words = first_sentence.split()
-    if len(words) > 14:
-        words = words[:12]
-    # Trim back to a clause boundary: drop trailing connectives/articles/aux
-    # verbs and dangling gerunds until the headline ends on a solid word.
+    
+    # Try to find a natural breaking point (comma, colon) within the first 15 words
+    if len(words) > 15:
+        break_idx = -1
+        for i in range(10, min(16, len(words))):
+            if words[i].endswith(',') or words[i].endswith(':'):
+                break_idx = i
+                break
+        
+        if break_idx != -1:
+            words = words[:break_idx+1]
+        else:
+            # Fallback: just take the first 14 words and add an ellipsis, rather than chopping mid-thought
+            words = words[:14]
+            words[-1] = words[-1].strip('.,;: ') + "..."
+
+    # Trim dangling connectives
     while words and (
         words[-1].lower().strip('.,;:"\'') in _DANGLING
         or (words[-1].lower().endswith('ing') and len(words) > 6)
     ):
         words.pop()
-    if len(words) < 3:
-        words = first_sentence.split()[:12]  # give up trimming, better than empty
+        
     headline = ' '.join(words).rstrip('.,;: ')
     return post_process_headline(headline) if headline else ''
 
