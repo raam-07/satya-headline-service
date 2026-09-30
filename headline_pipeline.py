@@ -256,8 +256,8 @@ def ask_critic(llm, critic_prompt_template, body_snippet, headline):
     formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=headline)
     critic_response = llm(
         formatted_critic,
-        max_tokens=10,
-        stop=["<turn|>", "<|turn>", "<eos>", "\n"],
+        max_tokens=80,
+        stop=["<turn|>", "<|turn>", "<eos>"],
         temperature=0.0,
         echo=False
     )
