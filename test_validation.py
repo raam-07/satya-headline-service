@@ -107,9 +107,9 @@ def test_prompt_templates():
         p = os.path.join(prompt_dir, fname)
         assert os.path.exists(p), f"Missing prompt file: {fname}"
         content = open(p).read()
-        assert "<start_of_turn>user" in content, f"Missing <start_of_turn>user in {fname}"
-        assert "<end_of_turn>" in content, f"Missing <end_of_turn> in {fname}"
-        assert "<start_of_turn>model" in content, f"Missing <start_of_turn>model in {fname}"
+        assert ("<|turn>user" in content or "<start_of_turn>user" in content), f"Missing user turn token in {fname}"
+        assert ("<turn|>" in content or "<end_of_turn>" in content), f"Missing end of turn token in {fname}"
+        assert ("<|turn>model" in content or "<start_of_turn>model" in content), f"Missing model turn token in {fname}"
         assert "<|im_start|>" not in content, f"Stray ChatML token <|im_start|> in {fname}"
         assert "<|im_end|>" not in content, f"Stray ChatML token <|im_end|> in {fname}"
         if fname == "critic.txt":
