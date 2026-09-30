@@ -1,0 +1,96 @@
+name: Headline Model Bake-Off (Qwen 14B vs Gemma 4 12B)
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: headline-bakeoff
+  cancel-in-progress: true
+
+jobs:
+  bakeoff:
+    name: headline-bakeoff (${{ matrix.model_name }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - model_name: qwen-2.5-14b
+            model_repo: bartowski/Qwen2.5-14B-Instruct-GGUF
+            model_file: Qwen2.5-14B-Instruct-Q5_K_M.gguf
+            cache_key: qwen-14b-q5-v1
+
+          - model_name: gemma-4-12b
+            model_repo: unsloth/gemma-4-12b-it-GGUF
+            model_file: gemma-4-12b-it-Q4_K_M.gguf
+            cache_key: gemma-4-12b-q4-v1
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Free Disk Space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo docker image prune -a -f || true
+          df -h
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake
+
+      - name: Install Python Dependencies
+        run: |
+          pip install --upgrade pip
+          pip install huggingface_hub
+          CMAKE_ARGS="-DLLAMA_AVX=OFF -DLLAMA_AVX2=OFF -DLLAMA_FMA=OFF -DLLAMA_F16C=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_FMA=OFF" pip install llama-cpp-python --no-binary llama-cpp-python --no-cache-dir
+
+      - name: Cache Model File
+        id: cache-model
+        uses: actions/cache@v4
+        with:
+          path: ./models
+          key: ${{ matrix.cache_key }}
+
+      - name: Download Model via HuggingFace
+        if: steps.cache-model.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ./models
+          echo "Downloading ${{ matrix.model_file }} from ${{ matrix.model_repo }}..."
+          python -c "
+          from huggingface_hub import hf_hub_download
+          hf_hub_download(
+            repo_id='${{ matrix.model_repo }}',
+            filename='${{ matrix.model_file }}',
+            local_dir='./models',
+            local_dir_use_symlinks=False
+          )
+          "
+          ls -lh ./models/
+
+      - name: Run Headline Bake-Off Evaluation
+        run: |
+          python eval_headline_bakeoff.py \
+            --model-name ${{ matrix.model_name }} \
+            --model-repo ${{ matrix.model_repo }} \
+            --model-file ${{ matrix.model_file }} \
+            --sample-file eval/sample_articles.json \
+            --output-file eval_headline_results_${{ matrix.model_name }}.json
+
+      - name: Upload Evaluation Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: headline-bakeoff-${{ matrix.model_name }}
+          path: eval_headline_results_${{ matrix.model_name }}.json
+          retention-days: 7
