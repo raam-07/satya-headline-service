@@ -63,3 +63,39 @@ def test_validate_formatting():
     valid, reason = validate_formatting("This is a very long headline that exceeds the maximum limit of fourteen words and therefore must fail validation")
     assert valid is False
     assert "exceeds 14 words" in reason
+
+    # Dangling word rejection
+    valid, reason = validate_formatting("Minister has tightened rules on baby")
+    assert valid is False
+    assert "dangling ending word" in reason
+
+    valid, reason = validate_formatting("Minister for Industries IT and AI P.K")
+    assert valid is False
+    assert "dangling ending word" in reason
+
+    # Allow valid endings with digits
+    valid, reason = validate_formatting("ISRO launches Chandrayaan 3")
+    assert valid is True
+    assert reason is None
+
+    valid, reason = validate_formatting("Cabinet approves semiconductor mission phase 2")
+    assert valid is True
+    assert reason is None
+
+def test_fallback_from_summary():
+    from headline_pipeline import fallback_from_summary
+
+    # Weekday date + initials preservation
+    s1 = "On Wednesday, September 30, Minister for Industries, IT and AI P.K. Kunhalikutty announced the new policy."
+    h1 = fallback_from_summary(s1)
+    assert "P.K. Kunhalikutty" in h1 or "Kunhalikutty" in h1
+    assert not h1.endswith("P.K")
+    assert not h1.startswith("On Wednesday")
+
+    # Appositive clause simplification without chopping on 'baby'
+    s2 = "Tukaram Mundhe, leading the Maharashtra Food and Drug Administration, has tightened rules on baby foods."
+    h2 = fallback_from_summary(s2)
+    assert not h2.endswith("baby")
+    assert "baby foods" in h2
+    assert "Tukaram Mundhe" in h2
+

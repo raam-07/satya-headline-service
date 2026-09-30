@@ -118,6 +118,10 @@ def validate_formatting(headline):
     # Chinese/Devanagari). Latin letters incl. accents sit below U+024F.
     if any(ch.isalpha() and ord(ch) > 0x024F for ch in cleaned):
         return False, "contains non-Latin script characters"
+    # Dangling ending guard: reject headlines ending mid-phrase (allow digits like 'Chandrayaan 3')
+    last_w = words[-1].lower().strip('.,;:"\'')
+    if last_w in _DANGLING or (len(last_w) <= 1 and not last_w.isdigit()):
+        return False, f"dangling ending word: {words[-1]}"
     return True, None
 
 # Words a headline must never END on — trailing these means we cut mid-clause
@@ -129,10 +133,11 @@ _DANGLING = {
     'amid', 'despite', 'during', 'is', 'are', 'was', 'were', 'has', 'have',
     'had', 'will', 'would', 'could', 'should', 'may', 'might', 'been', 'being',
     'from', 'into', 'about', 'than', 'because', 'if', 'so', 'not', 'no',
-    # dangling adjectives/determiners ("...challenging the new", "...and other")
+    # dangling adjectives/determiners/titles ("...challenging the new", "...and other")
     'new', 'other', 'several', 'various', 'more', 'most', 'key', 'top',
     'major', 'latest', 'former', 'first', 'last', 'this', 'these', 'those',
     'such', 'any', 'all', 'both', 'each', 'every', 'few', 'many', 'some',
+    'minister', 'chief', 'deputy', 'baby', 'infant', 'pk', 'p.k', 'dr', 'mr', 'ms',
 }
 
 def fallback_from_summary(content):
@@ -144,38 +149,68 @@ def fallback_from_summary(content):
     text = re.sub(r'[*_`#]+', '', text)
     if not text:
         return ''
-    first_sentence = re.split(r'(?<=[.!?])\s+', text)[0]
-    # Summaries often open with a date clause ("On July 17, 2026, ...") that
-    # wastes headline words and reads oddly — drop it.
+
+    # Protect abbreviations and initials from false sentence splits (e.g. "P.K. Kunhalikutty", "Dr. Rao")
+    protected = re.sub(r'\b([A-Z]\.)\s+', r'\1__SPACE__', text)
+    protected = re.sub(r'\b(Dr|Mr|Mrs|Ms|Prof|Govt|Gen|Lt|Col|St|vs)\.\s+', r'\1.__SPACE__', protected)
+    first_sentence = re.split(r'(?<=[.!?])\s+', protected)[0].replace('__SPACE__', ' ')
+
+    # Summaries often open with a date clause ("On July 17, 2026, ...", "On Wednesday, September 30, ...")
+    # that wastes headline words and reads oddly — drop it.
     first_sentence = re.sub(
-        r'^On\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4},?\s*',
+        r'^On\s+(?:(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[a-z]*,?\s+)?'
+        r'(?:(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s+\d{4})?|\d{1,2}(?:st|nd|rd|th)?\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*(?:,?\s+\d{4})?),?\s*',
+        '', first_sentence, flags=re.IGNORECASE)
+    first_sentence = re.sub(
+        r'^On\s+(?:Monday|Tuesday|Wednesday|Thursday|Friday|Saturday|Sunday)[a-z]*,?\s*',
         '', first_sentence, flags=re.IGNORECASE)
 
     words = first_sentence.split()
-    
-    # Try to find a natural breaking point (comma, colon) within the first 15 words
-    if len(words) > 15:
+
+    # If sentence is too long and has an appositive clause (e.g. "Tukaram Mundhe, leading the FDA, has tightened..."),
+    # try dropping the parenthetical appositive to produce a clean, punchy subject+verb headline.
+    if len(words) > 14 and ',' in first_sentence:
+        parts = [p.strip() for p in first_sentence.split(',') if p.strip()]
+        if len(parts) >= 3:
+            simplified = f"{parts[0]} {' '.join(parts[2:])}"
+            sim_words = simplified.split()
+            if 3 <= len(sim_words) <= 14:
+                first_sentence = simplified
+                words = sim_words
+
+    # If still > 14 words, search for a natural clause boundary (comma, colon, or conjunction)
+    if len(words) > 14:
         break_idx = -1
-        for i in range(10, min(16, len(words))):
+        # Check for punctuation break between words 6 and 14
+        for i in range(min(13, len(words) - 1), 5, -1):
             if words[i].endswith(',') or words[i].endswith(':'):
                 break_idx = i
                 break
-        
-        if break_idx != -1:
-            words = words[:break_idx+1]
-        else:
-            # Fallback: just take the first 14 words and add an ellipsis, rather than chopping mid-thought
-            words = words[:14]
-            words[-1] = words[-1].strip('.,;: ') + "..."
 
-    # Trim dangling connectives
+        # Or break before subordinate conjunctions / prepositions
+        if break_idx == -1:
+            conjunctions = {'following', 'amid', 'after', 'before', 'while', 'as', 'over', 'during'}
+            for i in range(min(14, len(words) - 1), 6, -1):
+                if words[i].lower() in conjunctions:
+                    break_idx = i - 1
+                    break
+
+        if break_idx != -1 and break_idx >= 5:
+            words = words[:break_idx + 1]
+        else:
+            words = words[:14]
+
+    # Trim dangling connectives, prepositions, and incomplete words (allow single digits like '3')
     while words and (
         words[-1].lower().strip('.,;:"\'') in _DANGLING
         or (words[-1].lower().endswith('ing') and len(words) > 6)
+        or (len(words[-1].strip('.,;:')) <= 1 and not words[-1].strip('.,;:').isdigit())
     ):
         words.pop()
-        
+
     headline = ' '.join(words).rstrip('.,;: ')
+    if len(headline.split()) < 3:
+        return ''
     return post_process_headline(headline) if headline else ''
 
 def post_process_headline(headline):

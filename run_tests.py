@@ -13,7 +13,12 @@ def run():
     print("Running test_validate_formatting...")
     test_validate_formatting()
     print("Passed!")
-    
+
+    from test_validation import test_fallback_from_summary
+    print("Running test_fallback_from_summary...")
+    test_fallback_from_summary()
+    print("Passed!")
+
     print("All tests passed successfully!")
 
 if __name__ == "__main__":
