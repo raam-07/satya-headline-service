@@ -214,7 +214,7 @@ def main():
                 formatted_safe = headline_safe_prompt_template.format(body_snippet=body_snippet)
                 safe_response = llm(
                     formatted_safe,
-                    max_tokens=50,
+                    max_tokens=60,
                     stop=["<turn|>", "<|turn>", "<eos>", "\n\n"],
                     temperature=0.0, # Cool and strict
                     echo=False
