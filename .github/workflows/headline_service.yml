@@ -92,7 +92,7 @@ jobs:
     timeout-minutes: 240
     strategy:
       fail-fast: false
-      max-parallel: 15
+      max-parallel: 13
       matrix:
         shard: ${{ fromJson(needs.setup.outputs.shards) }}
     permissions:
