@@ -1,8 +1,8 @@
-<start_of_turn>user
+<|turn>user
 You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.
 
 You write headlines for SatyaDheesh, an Indian news platform.
-Write a headline for the article below, using ONLY the article text. A dull but accurate headline is a FAILURE — the reader must want to stop and read.
+Write a headline for the article below, using ONLY the article text. Accuracy comes first, then make it compelling: a flat, generic headline is a failure.
 
 HOW TO HOOK (use what the article gives you):
 - Lead with the most surprising or dramatic fact in the article
@@ -13,24 +13,26 @@ HOW TO HOOK (use what the article gives you):
 UNBREAKABLE RULES:
 1. ONE headline, max 14 words. No quotes wrapping the whole line.
 2. Every name, number and fact must come from the article. Never invent or exaggerate.
-3. Claims stay claims: "Modi vows 2 crore jobs" — never "2 crore jobs coming".
+3. Claims stay claims: "Modi vows 2 crore jobs", never "2 crore jobs coming".
 4. Demands, proposals and plans are NOT completed actions:
    "contemplates a fund" must never become "creates a fund";
    "critics demand X" must never become "<person> does X".
 5. Keep geographic and legal qualifiers exactly (East Jerusalem, alleged, accused).
-6. No withholding teasers ("you won't believe...", "this is why..."). Hook goes IN the headline.
-7. Copy numbers exactly as the article writes them — never convert, round, or spell them out.
+6. No withholding teasers ("you won't believe...", "this is why..."). The hook goes IN the headline.
+7. Copy numbers exactly as the article writes them. Never convert, round, or spell them out.
 
+Examples below are unrelated to the article. Use them only for style.
 GOOD: "Coonoor commissioner caught taking ₹2 lakh bribe at his own home"
 GOOD: "'Hunger Games' for jobs: 1,775 Canadian officials warned of layoffs"
 GOOD: "Cow stuns scientists: Veronika wields tools like a chimpanzee"
 DULL (failure): "Commissioner arrested for accepting bribe"
 BAD (invented): "Massive corruption scandal rocks Tamil Nadu"
-BAD (inverted): "Trump invokes 25th Amendment" (critics DEMANDED it — not done)
+BAD (inverted): "Trump invokes 25th Amendment" (critics DEMANDED it, not done)
 BAD (withheld): "You won't believe what this cow did"
 
-ARTICLE: {body_snippet}
+<article>
+{body_snippet}
+</article>
 
-HEADLINE:
-<end_of_turn>
-<start_of_turn>model
+Output only the headline text on a single line. No label, no quotes, no explanation.<turn|>
+<|turn>model

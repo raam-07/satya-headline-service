@@ -216,6 +216,20 @@ def fallback_from_summary(content):
     return post_process_headline(headline) if headline else ''
 
 def post_process_headline(headline):
+    if not headline:
+        return ""
+    # Strip thought channels (Gemma 4 reasoning channel)
+    if "<channel|>" in headline:
+        headline = headline.split("<channel|>")[-1]
+    headline = re.sub(r'<\|channel\|?>.*?<channel\|?>', '', headline, flags=re.DOTALL)
+    
+    # Strip leading labels (e.g. "HEADLINE:", "Headline:", "**Headline:**", "Title:")
+    headline = re.sub(r'^\s*(?:\*\*)?(?:HEADLINE|Headline|Title|TITLE):\s*(?:\*\*)?', '', headline.strip(), flags=re.IGNORECASE)
+    
+    # Take first non-empty line
+    lines = [l.strip() for l in headline.splitlines() if l.strip()]
+    headline = lines[0] if lines else ""
+
     headline = headline.strip()
     # Strip wrapping quotes and asterisks
     while (headline.startswith('"') and headline.endswith('"')) or \
@@ -242,12 +256,16 @@ def ask_critic(llm, critic_prompt_template, body_snippet, headline):
     formatted_critic = critic_prompt_template.format(body_snippet=body_snippet, headline=headline)
     critic_response = llm(
         formatted_critic,
-        max_tokens=5,
-        stop=["<end_of_turn>", "<start_of_turn>", "\n", "<|im_end|>", "Article:", "<|im_start|>"],
+        max_tokens=10,
+        stop=["<turn|>", "<|turn>", "<eos>", "\n"],
         temperature=0.0,
         echo=False
     )
-    ans = critic_response['choices'][0].get('text', '').strip().upper()
+    raw = critic_response['choices'][0].get('text', '').strip()
+    if "<channel|>" in raw:
+        raw = raw.split("<channel|>")[-1].strip()
+    raw = re.sub(r'<\|channel\|?>.*?<channel\|?>', '', raw, flags=re.DOTALL).strip()
+    ans = raw.upper()
     verdict = "YES" in ans and "NO" not in ans
     if not verdict:
         logging.info(f"  [critic] answered '{ans or '[empty]'}' for: '{headline}'")
@@ -432,14 +450,15 @@ def main():
             
             response = llm(
                 formatted_prompt,
-                max_tokens=50,
+                max_tokens=60,
                 top_p=0.9,
-                stop=["<end_of_turn>", "<start_of_turn>", "\n\n", "<|im_end|>", "Article:", "<|im_start|>"],
+                stop=["<turn|>", "<|turn>", "<eos>", "\n\n"],
                 temperature=0.4,
                 repeat_penalty=1.1,
                 echo=False
             )
-            masala_headline = response['choices'][0].get('text', '').strip()
+            raw_masala = response['choices'][0].get('text', '').strip()
+            masala_headline = post_process_headline(raw_masala)
             
             # C. Check masala headline and ask critic
             masala_valid = False
@@ -457,12 +476,13 @@ def main():
                 formatted_safe = headline_safe_prompt_template.format(body_snippet=body_snippet)
                 safe_response = llm(
                     formatted_safe,
-                    max_tokens=50,
-                    stop=["<end_of_turn>", "<start_of_turn>", "\n\n", "<|im_end|>", "Article:", "<|im_start|>"],
+                    max_tokens=60,
+                    stop=["<turn|>", "<|turn>", "<eos>", "\n\n"],
                     temperature=0.2,
                     echo=False
                 )
-                safe_headline = safe_response['choices'][0].get('text', '').strip()
+                raw_safe = safe_response['choices'][0].get('text', '').strip()
+                safe_headline = post_process_headline(raw_safe)
 
                 masala_log = masala_headline if masala_headline else "[empty]"
                 logging.info(f"Article ID: {article_id} | Stage: critic-retry | Masala: '{masala_log}' | Safe: '{safe_headline}'")

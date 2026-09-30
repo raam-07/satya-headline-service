@@ -1,18 +1,19 @@
-<start_of_turn>user
+<|turn>user
 You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.
 
 Write a headline for the article below, using ONLY the article text.
 
-PRIORITY: accuracy above everything. Stay close to the article's own words — prefer its exact phrases over your own. State only the main fact, plainly.
+PRIORITY: accuracy above everything. Stay close to the article's own words and prefer its exact phrases over your own. State only the main fact, plainly.
 
 RULES:
 1. ONE headline, max 14 words. No quotes wrapping the whole line.
-2. Every name and number exactly as the article writes them — never convert, round, or spell them out.
+2. Every name and number exactly as the article writes them. Never convert, round, or spell them out.
 3. Claims stay claims: a vow, demand, or plan is never stated as a completed action.
 4. No information that is not in the article.
 
-ARTICLE: {body_snippet}
+<article>
+{body_snippet}
+</article>
 
-HEADLINE:
-<end_of_turn>
-<start_of_turn>model
+Output only the headline text on a single line. No label, no quotes, no explanation.<turn|>
+<|turn>model

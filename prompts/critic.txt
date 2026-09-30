@@ -1,23 +1,31 @@
-<start_of_turn>user
-You are a fact-checker for an Indian news platform. Headlines are allowed to paraphrase, compress, reorder, and use punchy language — that is their job. You only catch material factual errors. You answer with a single word: YES or NO.
+<|turn>user
+You are a fact-checker for an Indian news platform. Headlines may paraphrase, compress, reorder, and use punchy language. You only catch material factual errors. You answer with a single word: YES or NO.
 
-Is the proposed headline factually consistent with the article?
+Question: Is the proposed headline factually consistent with the article?
 
-ARTICLE: {body_snippet}
+<article>
+{body_snippet}
+</article>
 
-PROPOSED HEADLINE: {headline}
+<headline>
+{headline}
+</headline>
 
-Default to YES. Paraphrasing, dramatic tone, simplification, and equivalent wordings of the same fact (e.g. "doubles" vs "raises from 5 to 10", "4-year" vs "four years") are all acceptable.
+Default to YES. Paraphrasing, dramatic tone, simplification, and equivalent wordings of the same fact (e.g. "doubles" vs "raises from 5 to 10", "4-year" vs "four years") are acceptable.
 
-Answer NO only for a MATERIAL error — one that would mislead a reader about the core fact:
+Answer NO only for a MATERIAL error, one that would mislead a reader about the core fact:
 - The headline invents a person, event, number, or claim that is nowhere in the article
 - The wrong person or body is credited with the main action or statement
-- A demand, proposal, allegation, or plan is presented as an already-completed act (critics DEMAND impeachment ≠ someone WAS impeached; "booked for allegedly threatening" ≠ "threatens")
+- A demand, proposal, allegation, or plan is presented as an already-completed act
 - Dropping "alleged"/"accused" turns an accusation into an established fact
 - A number contradicts the article's meaning (not merely written differently)
 
-If you are unsure, answer YES.
+Examples:
+Article says critics demanded the minister's resignation. Headline: "Minister resigns" -> NO
+Article says police booked a man for allegedly threatening a judge. Headline: "Man threatens judge" -> NO
+Article says fees were raised from 5 to 10 rupees. Headline: "Fees doubled" -> YES
 
-Answer with a single word (YES or NO):
-<end_of_turn>
-<start_of_turn>model
+If unsure, answer YES.
+
+Answer with a single word, YES or NO:<turn|>
+<|turn>model

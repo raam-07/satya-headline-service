@@ -215,7 +215,7 @@ def main():
                 safe_response = llm(
                     formatted_safe,
                     max_tokens=50,
-                    stop=["<end_of_turn>", "<start_of_turn>", "\n\n", "<|im_end|>", "Article:", "<|im_start|>"],
+                    stop=["<turn|>", "<|turn>", "<eos>", "\n\n"],
                     temperature=0.0, # Cool and strict
                     echo=False
                 )
