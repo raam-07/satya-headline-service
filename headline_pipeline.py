@@ -340,6 +340,7 @@ def load_llm():
 def main():
     parser = argparse.ArgumentParser(description="Satya Headline Service")
     parser.add_argument("--test-run", action="store_true", help="Process 50 recent articles without consuming the queue with rejections")
+    parser.add_argument("--batch-size", type=int, default=None, help="Batch size per run (default: 20)")
     parser.add_argument("--shard", type=int, default=None, help="Shard ID to process (0 to num-shards - 1)")
     parser.add_argument("--num-shards", type=int, default=1, help="Total number of shards")
     args = parser.parse_args()
@@ -355,7 +356,7 @@ def main():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        batch_size = 50 if args.test_run else int(os.environ.get("HEADLINE_BATCH_SIZE", 10))
+        batch_size = 50 if args.test_run else (args.batch_size if args.batch_size is not None else int(os.environ.get("HEADLINE_BATCH_SIZE", 20)))
         
         if shard is not None and num_shards > 1:
             logging.info(f"Running in shard mode: shard {shard} of {num_shards}")

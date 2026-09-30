@@ -73,7 +73,7 @@ jobs:
           fi
 
           if [ -z "$INPUT_SHARD" ] || [ "$INPUT_SHARD" = "all" ]; then
-            echo "shards=[0,1,2,3,4,5,6]" >> $GITHUB_OUTPUT
+            echo "shards=[0,1,2,3,4,5,6,7,8,9,10,11,12]" >> $GITHUB_OUTPUT
             echo "validator_shards=$VAL_SHARDS" >> $GITHUB_OUTPUT
             echo "num_validator_shards=$VAL_NUM" >> $GITHUB_OUTPUT
           elif [ "$INPUT_SHARD" = "validator" ]; then
@@ -92,7 +92,7 @@ jobs:
     timeout-minutes: 240
     strategy:
       fail-fast: false
-      max-parallel: 10
+      max-parallel: 15
       matrix:
         shard: ${{ fromJson(needs.setup.outputs.shards) }}
     permissions:
@@ -125,7 +125,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const shard = Number(process.env.SHARD_ID);
             const cutoff = Math.floor(Date.now() / 1000) - 86400;
-            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 7) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 13) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
@@ -250,7 +250,8 @@ jobs:
           SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
           SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
           SHARD_ID: ${{ matrix.shard }}
-          NUM_SHARDS: 7
+          NUM_SHARDS: 13
+          HEADLINE_BATCH_SIZE: 20
         run: |
           if [ "${{ inputs.test_run }}" = "true" ] || [ "${{ github.event.inputs.test_run }}" = "true" ]; then
             echo "Running in test mode..."
@@ -278,7 +279,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const shard = process.env.SHARD_ID;
             const cutoff = Math.floor(Date.now() / 1000) - 86400;
-            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 7) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 13) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
