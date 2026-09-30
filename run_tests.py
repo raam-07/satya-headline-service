@@ -14,9 +14,13 @@ def run():
     test_validate_formatting()
     print("Passed!")
 
-    from test_validation import test_fallback_from_summary
+    from test_validation import test_fallback_from_summary, test_prompt_templates
     print("Running test_fallback_from_summary...")
     test_fallback_from_summary()
+    print("Passed!")
+
+    print("Running test_prompt_templates...")
+    test_prompt_templates()
     print("Passed!")
 
     print("All tests passed successfully!")

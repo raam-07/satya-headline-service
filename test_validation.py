@@ -99,3 +99,24 @@ def test_fallback_from_summary():
     assert "baby foods" in h2
     assert "Tukaram Mundhe" in h2
 
+def test_prompt_templates():
+    import os
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    prompt_dir = os.path.join(base_dir, "prompts")
+    for fname in ["headline.txt", "headline_safe.txt", "critic.txt"]:
+        p = os.path.join(prompt_dir, fname)
+        assert os.path.exists(p), f"Missing prompt file: {fname}"
+        content = open(p).read()
+        assert "<start_of_turn>user" in content, f"Missing <start_of_turn>user in {fname}"
+        assert "<end_of_turn>" in content, f"Missing <end_of_turn> in {fname}"
+        assert "<start_of_turn>model" in content, f"Missing <start_of_turn>model in {fname}"
+        assert "<|im_start|>" not in content, f"Stray ChatML token <|im_start|> in {fname}"
+        assert "<|im_end|>" not in content, f"Stray ChatML token <|im_end|> in {fname}"
+        if fname == "critic.txt":
+            formatted = content.format(body_snippet="Sample Body", headline="Sample Headline")
+            assert "Sample Body" in formatted and "Sample Headline" in formatted
+        else:
+            formatted = content.format(body_snippet="Sample Body")
+            assert "Sample Body" in formatted
+
+

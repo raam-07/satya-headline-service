@@ -1,6 +1,6 @@
-<|im_start|>system
-You are a fact-checker for an Indian news platform. Headlines are allowed to paraphrase, compress, reorder, and use punchy language — that is their job. You only catch material factual errors. You answer with a single word: YES or NO.<|im_end|>
-<|im_start|>user
+<start_of_turn>user
+You are a fact-checker for an Indian news platform. Headlines are allowed to paraphrase, compress, reorder, and use punchy language — that is their job. You only catch material factual errors. You answer with a single word: YES or NO.
+
 Is the proposed headline factually consistent with the article?
 
 ARTICLE: {body_snippet}
@@ -18,5 +18,6 @@ Answer NO only for a MATERIAL error — one that would mislead a reader about th
 
 If you are unsure, answer YES.
 
-Answer with a single word (YES or NO):<|im_end|>
-<|im_start|>assistant
+Answer with a single word (YES or NO):
+<end_of_turn>
+<start_of_turn>model

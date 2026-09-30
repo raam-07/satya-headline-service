@@ -1,6 +1,6 @@
-<|im_start|>system
-You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.<|im_end|>
-<|im_start|>user
+<start_of_turn>user
+You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.
+
 You write headlines for SatyaDheesh, an Indian news platform.
 Write a headline for the article below, using ONLY the article text. A dull but accurate headline is a FAILURE — the reader must want to stop and read.
 
@@ -31,5 +31,6 @@ BAD (withheld): "You won't believe what this cow did"
 
 ARTICLE: {body_snippet}
 
-HEADLINE:<|im_end|>
-<|im_start|>assistant
+HEADLINE:
+<end_of_turn>
+<start_of_turn>model

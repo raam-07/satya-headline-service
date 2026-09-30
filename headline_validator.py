@@ -27,8 +27,10 @@ logging.basicConfig(
 # ==============================================================================
 # --- CONFIGURATION ---
 # ==============================================================================
+MODEL_REPO = os.environ.get("HEADLINE_MODEL_REPO", "unsloth/gemma-4-12b-it-GGUF")
+MODEL_FILENAME = os.environ.get("HEADLINE_MODEL_FILE", "gemma-4-12b-it-Q4_K_M.gguf")
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
-MODEL_PATH = os.path.join(MODEL_DIR, "Qwen2.5-14B-Instruct-Q5_K_M.gguf")
+MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILENAME)
 
 def load_env():
     env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env")
@@ -74,7 +76,7 @@ from headline_pipeline import validate_formatting, post_process_headline, ask_cr
 def load_llm():
     if not os.path.exists(MODEL_PATH):
         raise FileNotFoundError(f"Model file not found at {MODEL_PATH}. Make sure it is downloaded.")
-    logging.info(f"Loading Qwen model for Validation from {MODEL_PATH}...")
+    logging.info(f"Loading headline model for Validation from {MODEL_PATH}...")
     llm = Llama(
         model_path=MODEL_PATH,
         n_ctx=4096,
@@ -213,7 +215,7 @@ def main():
                 safe_response = llm(
                     formatted_safe,
                     max_tokens=50,
-                    stop=["<|im_end|>", "Article:", "<|im_start|>"],
+                    stop=["<end_of_turn>", "<start_of_turn>", "\n\n", "<|im_end|>", "Article:", "<|im_start|>"],
                     temperature=0.0, # Cool and strict
                     echo=False
                 )

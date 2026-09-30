@@ -1,6 +1,6 @@
-<|im_start|>system
-You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.<|im_end|>
-<|im_start|>user
+<start_of_turn>user
+You are a news editor who writes concise, factual headlines. You follow formatting rules exactly.
+
 Write a headline for the article below, using ONLY the article text.
 
 PRIORITY: accuracy above everything. Stay close to the article's own words — prefer its exact phrases over your own. State only the main fact, plainly.
@@ -13,5 +13,6 @@ RULES:
 
 ARTICLE: {body_snippet}
 
-HEADLINE:<|im_end|>
-<|im_start|>assistant
+HEADLINE:
+<end_of_turn>
+<start_of_turn>model

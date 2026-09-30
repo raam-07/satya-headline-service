@@ -42,8 +42,10 @@ def log_rejection(article_id, stage, generated_headline, reason):
 # ==============================================================================
 # --- CONFIGURATION ---
 # ==============================================================================
+MODEL_REPO = os.environ.get("HEADLINE_MODEL_REPO", "unsloth/gemma-4-12b-it-GGUF")
+MODEL_FILENAME = os.environ.get("HEADLINE_MODEL_FILE", "gemma-4-12b-it-Q4_K_M.gguf")
 MODEL_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models")
-MODEL_PATH = os.path.join(MODEL_DIR, "Qwen2.5-14B-Instruct-Q5_K_M.gguf")
+MODEL_PATH = os.path.join(MODEL_DIR, MODEL_FILENAME)
 
 def load_env():
     # Check parent directory for .env
@@ -241,7 +243,7 @@ def ask_critic(llm, critic_prompt_template, body_snippet, headline):
     critic_response = llm(
         formatted_critic,
         max_tokens=5,
-        stop=["<|im_end|>", "Article:", "<|im_start|>"],
+        stop=["<end_of_turn>", "<start_of_turn>", "\n", "<|im_end|>", "Article:", "<|im_start|>"],
         temperature=0.0,
         echo=False
     )
@@ -295,15 +297,15 @@ def load_llm():
     from llama_cpp import Llama
     if not os.path.exists(MODEL_PATH):
         os.makedirs(MODEL_DIR, exist_ok=True)
-        logging.info("Downloading Qwen 14B IT model from HuggingFace...")
+        logging.info(f"Downloading {MODEL_FILENAME} from {MODEL_REPO} via HuggingFace...")
         from huggingface_hub import hf_hub_download
         hf_hub_download(
-            repo_id='bartowski/Qwen2.5-14B-Instruct-GGUF',
-            filename='Qwen2.5-14B-Instruct-Q5_K_M.gguf',
+            repo_id=MODEL_REPO,
+            filename=MODEL_FILENAME,
             local_dir=MODEL_DIR,
             local_dir_use_symlinks=False
         )
-    logging.info(f"Loading Qwen 14B model from {MODEL_PATH}...")
+    logging.info(f"Loading headline model from {MODEL_PATH}...")
     llm = Llama(
         model_path=MODEL_PATH,
         n_ctx=4096,
@@ -432,7 +434,7 @@ def main():
                 formatted_prompt,
                 max_tokens=50,
                 top_p=0.9,
-                stop=["<|im_end|>", "Article:", "<|im_start|>"],
+                stop=["<end_of_turn>", "<start_of_turn>", "\n\n", "<|im_end|>", "Article:", "<|im_start|>"],
                 temperature=0.4,
                 repeat_penalty=1.1,
                 echo=False
@@ -456,7 +458,7 @@ def main():
                 safe_response = llm(
                     formatted_safe,
                     max_tokens=50,
-                    stop=["<|im_end|>", "Article:", "<|im_start|>"],
+                    stop=["<end_of_turn>", "<start_of_turn>", "\n\n", "<|im_end|>", "Article:", "<|im_start|>"],
                     temperature=0.2,
                     echo=False
                 )
