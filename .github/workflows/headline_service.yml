@@ -67,7 +67,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const cutoff = Math.floor(Date.now() / 1000) - 3 * 86400;
             // Only "more than 140?" matters, so stop counting at 141 instead of reading the whole 3-day window.
-            const stmt = { sql: `SELECT COUNT(*) FROM (SELECT 1 FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NOT NULL AND rephrased_title != "" AND (headline_verified = 0 OR headline_verified IS NULL) LIMIT 141)` };
+            const stmt = { sql: `SELECT COUNT(*) FROM (SELECT 1 FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NOT NULL AND length(rephrased_title) > 0 AND (headline_verified = 0 OR headline_verified IS NULL) LIMIT 141)` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
@@ -368,7 +368,7 @@ jobs:
             const shard = Number(process.env.SHARD_ID);
             const num_shards = Number(process.env.NUM_SHARDS);
             const cutoff = Math.floor(Date.now() / 1000) - 3 * 86400;
-            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NOT NULL AND rephrased_title != "" AND (headline_verified = 0 OR headline_verified IS NULL) AND (id % ${num_shards}) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NOT NULL AND length(rephrased_title) > 0 AND (headline_verified = 0 OR headline_verified IS NULL) AND (id % ${num_shards}) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
