@@ -353,6 +353,9 @@ def main():
     num_shards = args.num_shards if args.num_shards != 1 else (int(os.environ.get('NUM_SHARDS')) if os.environ.get('NUM_SHARDS') is not None else 1)
     
     # 1. Connect to Database: Fetch batch and close immediately
+    # (No INDEXED BY: with idx_articles_headline_todo present - created by the workflow's setup
+    # job - the planner reads only articles still waiting for a headline; without it, it falls
+    # back to the scraped_at index as before.)
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -362,7 +365,7 @@ def main():
             logging.info(f"Running in shard mode: shard {shard} of {num_shards}")
             query = """
                 SELECT id, title, rephrased_article 
-                FROM articles INDEXED BY idx_articles_scraped
+                FROM articles
                 WHERE scraped_at >= ?
                   AND rephrased_title IS NULL 
                   AND rephrased_article IS NOT NULL
@@ -374,7 +377,7 @@ def main():
         else:
             query = """
                 SELECT id, title, rephrased_article 
-                FROM articles INDEXED BY idx_articles_scraped
+                FROM articles
                 WHERE scraped_at >= ?
                   AND rephrased_title IS NULL 
                   AND rephrased_article IS NOT NULL

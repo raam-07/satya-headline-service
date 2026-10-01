@@ -44,12 +44,30 @@ jobs:
             INPUT_SHARD="${{ github.event.client_payload.shard }}"
           fi
           
+          # Work-queue index for the headline shards: only articles still waiting for a headline.
+          # Their queries used to walk every article of the last day (x13 shards, x3 queries per run).
+          # Idempotent; if it fails the queries still work, just slower.
+          node -e '
+            const url = process.env.SATYA_DB_URL.trim().replace("libsql://", "https://").replace(/\/$/, "");
+            const token = process.env.SATYA_DB_TOKEN.trim();
+            const stmt = { sql: "CREATE INDEX IF NOT EXISTS idx_articles_headline_todo ON articles(scraped_at) WHERE rephrased_title IS NULL AND rephrased_article IS NOT NULL" };
+            fetch(url + "/v2/pipeline", {
+              method: "POST",
+              headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
+              body: JSON.stringify({ requests: [ { type: "execute", stmt }, { type: "close" } ] })
+            })
+            .then(res => res.json())
+            .then(res => console.log("todo index:", res.results[0].type))
+            .catch(e => console.log("todo index: skipped", e.message));
+          ' || true
+
           # Query unverified candidate count to decide matrix size
           UNVERIFIED_COUNT=$(node -e '
             const url = process.env.SATYA_DB_URL.trim().replace("libsql://", "https://").replace(/\/$/, "");
             const token = process.env.SATYA_DB_TOKEN.trim();
             const cutoff = Math.floor(Date.now() / 1000) - 3 * 86400;
-            const stmt = { sql: `SELECT COUNT(id) FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NOT NULL AND rephrased_title != "" AND (headline_verified = 0 OR headline_verified IS NULL)` };
+            // Only "more than 140?" matters, so stop counting at 141 instead of reading the whole 3-day window.
+            const stmt = { sql: `SELECT COUNT(*) FROM (SELECT 1 FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NOT NULL AND rephrased_title != "" AND (headline_verified = 0 OR headline_verified IS NULL) LIMIT 141)` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
@@ -125,7 +143,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const shard = Number(process.env.SHARD_ID);
             const cutoff = Math.floor(Date.now() / 1000) - 86400;
-            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 13) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 13) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
@@ -279,7 +297,7 @@ jobs:
             const token = process.env.SATYA_DB_TOKEN.trim();
             const shard = process.env.SHARD_ID;
             const cutoff = Math.floor(Date.now() / 1000) - 86400;
-            const stmt = { sql: `SELECT id FROM articles INDEXED BY idx_articles_scraped WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 13) = ${shard} LIMIT 1` };
+            const stmt = { sql: `SELECT id FROM articles WHERE scraped_at >= ${cutoff} AND rephrased_title IS NULL AND rephrased_article IS NOT NULL AND (id % 13) = ${shard} LIMIT 1` };
             fetch(url + "/v2/pipeline", {
               method: "POST",
               headers: { "Authorization": "Bearer " + token, "Content-Type": "application/json" },
