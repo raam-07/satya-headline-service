@@ -473,6 +473,62 @@ jobs:
           client-payload: '{"ref": "${{ github.ref }}", "sha": "${{ github.sha }}"}'
 
 
+  trigger_hindi:
+    # Hindi translates the final headline, so it starts after the headline jobs AND the validator
+    # (which may rewrite headlines) have finished. A trigger while Hindi is running just waits in its
+    # queue (one at most), so frequent headline runs can't pile up Hindi runs.
+    needs: [setup, run_headlines, run_validator]
+    if: ${{ always() && !cancelled() && inputs.test_run != true && github.event.inputs.test_run != 'true' && (needs.run_headlines.result == 'success' || needs.run_validator.result == 'success') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for Hindi work
+        id: check
+        env:
+          SATYA_DB_URL: ${{ secrets.SATYA_DB_URL }}
+          SATYA_DB_TOKEN: ${{ secrets.SATYA_DB_TOKEN }}
+          VALIDATOR_RAN: ${{ needs.run_validator.result == 'success' }}
+        run: |
+          python3 - <<'PY'
+          import json, os, time, urllib.request
+          url = os.environ["SATYA_DB_URL"].strip().replace("libsql://", "https://").rstrip("/")
+          tok = os.environ["SATYA_DB_TOKEN"].strip()
+          def q(sql, args):
+              body = {"requests": [{"type": "execute", "stmt": {"sql": sql, "args": [{"type": "integer", "value": str(a)} for a in args]}}, {"type": "close"}]}
+              req = urllib.request.Request(url + "/v2/pipeline", data=json.dumps(body).encode(),
+                                           headers={"Authorization": "Bearer " + tok, "Content-Type": "application/json"})
+              res = json.load(urllib.request.urlopen(req, timeout=30))["results"][0]
+              if res["type"] != "ok":
+                  raise RuntimeError(res)
+              return res["response"]["result"]["rows"]
+          need = os.environ.get("VALIDATOR_RAN") == "true"   # validator may have changed headlines
+          try:
+              floor = q("SELECT id FROM articles WHERE scraped_at >= ? ORDER BY scraped_at LIMIT 1", [int(time.time()) - 48 * 3600])
+              if floor:
+                  # (translated_hi, id) index: only untranslated rows of the last 48h are read
+                  rows = q("SELECT id FROM articles WHERE translated_hi = 0 AND id >= ? AND rephrased_title IS NOT NULL LIMIT 1",
+                           [int(floor[0][0]["value"])])
+                  need = need or bool(rows)
+          except Exception as e:
+              print(f"::warning::check failed ({e}); triggering anyway")
+              need = True
+          print("Hindi work pending:", need)
+          open(os.environ["GITHUB_OUTPUT"], "a").write(f"need={'true' if need else 'false'}\n")
+          PY
+      - name: Trigger Hindi translation
+        if: ${{ steps.check.outputs.need == 'true' }}
+        env:
+          HINDI_PAT: ${{ secrets.HINDI_PAT }}
+        run: |
+          if [ -z "$HINDI_PAT" ]; then
+            echo "::warning::Secret HINDI_PAT is not set - Hindi runs only on its 6-hourly schedule."; exit 0
+          fi
+          code=$(curl -sS -o /tmp/out -w "%{http_code}" -X POST \
+            -H "Authorization: Bearer $HINDI_PAT" -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/SatyaDheesh-Hindi/Hindi/dispatches \
+            -d '{"event_type":"trigger-hindi-translation"}')
+          echo "dispatch HTTP $code"; cat /tmp/out
+          [ "$code" = "204" ] || echo "::warning::Hindi trigger failed (HTTP $code) - check HINDI_PAT access to SatyaDheesh-Hindi/Hindi"
+
   keepalive:
     runs-on: ubuntu-latest
     permissions:
